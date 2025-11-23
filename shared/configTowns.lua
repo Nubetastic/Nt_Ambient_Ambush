@@ -115,4 +115,10 @@ ConfigTowns.Towns = {
         ZoneTypeId = 11,
         Name = "Fort Wallace"
     },
+
+    ["SISIKA_PENETENTIARY"] = {
+        DistrictId = 1106871234,
+        ZoneTypeId = 11,
+        Name = "Sisika Penitentiary"
+    },
 }

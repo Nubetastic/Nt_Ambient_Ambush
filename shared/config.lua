@@ -9,7 +9,7 @@ Config = {}
 -- ============================================
 
 -- Enable debug messages in console
-Config.Debug = true
+Config.Debug = false
 
 -- ============================================
 -- AMBUSH SPAWN SETTINGS
@@ -18,12 +18,12 @@ Config.Debug = true
 -- Base chance for ambush to spawn (percentage, 0-100)
 -- This is checked every CheckInterval seconds when player is outside towns
 Config.AmbushChance = {
-    Base  = 10,
-    NightAddedChance = 10 -- Chance added to base during night, if area is enabled.
+    Base  = 5,
+    NightAddedChance = 15 -- Chance added to base during night, if area is enabled.
 }
 
 -- How often to check for ambush spawns (in seconds)
-Config.CheckInterval = 30
+Config.CheckInterval = 60
 
 -- Base cooldown after an ambush spawns (in minutes)
 Config.BaseCooldown = 15
@@ -32,24 +32,24 @@ Config.BaseCooldown = 15
 -- BaseMin/Max: Base number of NPCs for the host player
 -- PerPlayerMin/Max: Additional NPCs per nearby player
 Config.SpawnNum = {
-    BaseMin = 1,
-    BaseMax = 2,
+    BaseMin = 2,
+    BaseMax = 4,
     PerPlayerMin = 1,
-    PerPlayerMax = 2
+    PerPlayerMax = 3
 }
 
 
 -- Distance from player to spawn NPCs (in meters)
-Config.SpawnFrontDistance = 80
-Config.SpawnFrontHorseDistance = 200
-Config.SpawnBackDistance = 70
-Config.SpawnExtendedDistance = 200 -- Extended distance for mounted players
-Config.MissionDespawnDistance = 2000 -- Allows for a chase.
+Config.SpawnFrontDistance = 70
+Config.SpawnFrontHorseDistance = 70
+Config.SpawnBackDistance = 60
+Config.SpawnExtendedDistance = 100 -- Extended distance for mounted players
+Config.MissionDespawnDistance = 1000 -- Allows for a chase.
 
 -- Percentage of NPCs to spawn at extended distance for mounted players
-Config.MountedPlayerSpawnPercentage = 25 -- 25% of NPCs will spawn at extended distance
+Config.MountedPlayerSpawnPercentage = 50 -- 50% of NPCs will spawn at extended distance
 
-
+    
 -- Percentage of NPCs that spawn in front of player (rest spawn around)
 -- 70 = 70% in front, 30% around
 Config.FrontSpawnPercentage = 70
@@ -69,7 +69,7 @@ Config.NPCTaskCooldown = 1500
 Config.NPCGoToCooldown = 2000
 
 -- Damage modifier for NPCs (1.0 = normal, 0.5 = half damage, 2.0 = double damage)
-Config.DamageModifier = 1.4
+Config.DamageModifier = 2
 
 -- ============================================
 -- BLIP SETTINGS

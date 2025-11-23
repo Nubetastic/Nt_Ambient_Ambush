@@ -55,19 +55,6 @@ function GetTotalCooldown()
     return Config.BaseCooldown
 end
 
--- Train/track detection helpers
-function IsPlayerOnTrain()
-    local ped = PlayerPedId()
-    return Citizen.InvokeNative(0x6F972C1AB75A1ED0, ped) == true
-end
-
-function IsPlayerOnTracks()
-    local ped = PlayerPedId()
-    local coords = GetEntityCoords(ped)
-    local trackIndex = Citizen.InvokeNative(0x85D39F5E3B6D7EB0, coords.x, coords.y, coords.z)
-    return trackIndex ~= nil and trackIndex ~= false
-end
-
 -- Check if player is in cooldown
 function IsInCooldown()
     return GetGameTimer() < cooldownEndTime
@@ -480,11 +467,14 @@ end
 
 function CheckForAmbush()
     -- Train/tracks early-outs
-    if IsPlayerOnTrain() or IsPlayerOnTracks() then
+    if IsPedInAnyTrain(PlayerPedId()) ~= false then
         return
     end
+    
+    local playerCoords = GetEntityCoords(PlayerPedId())
+
     -- Don't check if already in an active ambush or if ambushes are paused
-    if ActiveAmbush or PauseAmbush or Citizen.InvokeNative(0x6F972C1AB75A1ED0, source) then
+    if ActiveAmbush or PauseAmbush or Citizen.InvokeNative(0x6F972C1AB75A1ED0, source) or Citizen.InvokeNative(0x857ACB0AB4BD0D55, source) then
         return
     end
     
@@ -499,7 +489,6 @@ function CheckForAmbush()
     
     -- New minimal zone-checking pipeline per UpdateGuide.md
     local playerPed = PlayerPedId()
-    local playerCoords = GetEntityCoords(playerPed)
 
     -- Treat certain coordinate spheres as towns (no-spawn)
     if IsInsideNoSpawnSphere(playerCoords) then

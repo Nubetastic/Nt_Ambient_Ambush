@@ -20,7 +20,7 @@ Easily configurable safe areas, using Zone and Region or Coords and Radius.
 
 Ambush spawn with custom enemy groups, with their own weapon tables.
 
-Ambushes spawn using a set math.random() range for the base amount, and then adds additional math.random() every other player in the ambush zone.
+Ambushes spawn using a set math.random() range for the base amount, and then adds adtional math.random() every other player in the ambush zone.
 
 ## Exports
 

@@ -514,6 +514,7 @@ function SpawnAmbush(region, playerCoords)
     local primaryGroupPos = GetSpawnPosition(playerCoords, playerHeading, primaryGroupAngle, Config.SpawnFrontDistance)
     local secondaryGroupPos = GetSecondGroupSpawnPosition(playerCoords, playerHeading, primaryGroupAngle)
 
+
     -- Helper to apply weapons to a ped using plan.weapons or region weapons
     local function applyWeapons(npc)
         local w = plan.weapons or region.Weapons
@@ -621,6 +622,9 @@ function SpawnAmbush(region, playerCoords)
     if Config.Debug then
         print(string.format("[Ambush] Spawned %d entities (%d peds baseline)", #ActiveAmbush.npcs, plan.peds))
     end
+
+    -- Register ambush with server for tracking
+    TriggerServerEvent('ambush:server:registerAmbush', ambushId)
 
     -- 1) Host caches ped network IDs on the server and initializes host ped blips
     if #networkIds > 0 then

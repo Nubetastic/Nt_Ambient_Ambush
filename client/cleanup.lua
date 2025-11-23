@@ -94,6 +94,11 @@ function PerformAmbushCleanup()
     -- Cleanup NPC blips
     CleanupNPCBlips()
     
+    -- Notify server to clear the ambush from tracking
+    if ActiveAmbush then
+        TriggerServerEvent('ambush:server:clearAmbush', ActiveAmbush.id)
+    end
+    
     -- Notify server to clear network IDs
     TriggerServerEvent('ambush:server:clearNetworkIds')
     
@@ -105,6 +110,25 @@ function PerformAmbushCleanup()
     
     -- Delete all NPCs
     DeleteAllNPCs()
+    
+    -- Notify other clients in the ambush to clean up
+    if ActiveAmbush and ActiveAmbush.nearbyPlayers then
+        local otherPlayerIds = {}
+        local myServerId = GetPlayerServerId(PlayerId())
+        
+        for _, cachedPlayer in ipairs(ActiveAmbush.nearbyPlayers) do
+            if cachedPlayer.serverId ~= myServerId then
+                table.insert(otherPlayerIds, cachedPlayer.serverId)
+            end
+        end
+        
+        if #otherPlayerIds > 0 then
+            TriggerServerEvent('ambush:server:notifyClientsCleanup', otherPlayerIds)
+            if Config.Debug then
+                print("[Cleanup] Notifying " .. #otherPlayerIds .. " other clients to cleanup")
+            end
+        end
+    end
     
     -- Clear ambush data
     if ActiveAmbush then
@@ -133,6 +157,54 @@ end
 -- NOTE: This function is kept for compatibility but the monitoring loop now handles this directly
 function CleanupBlipsOnly()
 
+end
+
+-- ============================================
+-- VALIDATION SYSTEM
+-- ============================================
+
+-- Track if we're waiting for ambush validation response
+local validationPending = false
+local validationTimeout = 0
+
+-- Handle ambush validation response from server
+RegisterNetEvent('ambush:client:ambushValidationResponse')
+AddEventHandler('ambush:client:ambushValidationResponse', function(exists)
+    validationPending = false
+    validationTimeout = 0
+    
+    -- If ambush no longer exists on server, perform cleanup
+    if not exists then
+        if Config.Debug then
+            print("[Cleanup] Server validation failed - ambush not tracked, performing cleanup")
+        end
+        PerformAmbushCleanup()
+    end
+end)
+
+-- Validate ambush with server every second
+local function ValidateAmbushWithServer()
+    if not ActiveAmbush then
+        return
+    end
+    
+    -- If validation is already pending, check timeout
+    if validationPending then
+        validationTimeout = validationTimeout + 1
+        -- If we've been waiting 5 seconds without response, cleanup
+        if validationTimeout > 5 then
+            if Config.Debug then
+                print("[Cleanup] Server validation timeout - performing cleanup")
+            end
+            PerformAmbushCleanup()
+        end
+        return
+    end
+    
+    -- Send validation request to server
+    validationPending = true
+    validationTimeout = 0
+    TriggerServerEvent('ambush:server:validateAmbush', ActiveAmbush.hostPlayer.serverId, ActiveAmbush.id)
 end
 
 -- ============================================
@@ -221,6 +293,9 @@ local function MonitorAmbush()
         return
     end
     
+    -- Validate ambush with server every second while active
+    ValidateAmbushWithServer()
+    
     -- First check if players are near NPCs (new method)
     if ArePlayersNearNPCs() then
         -- Players are near NPCs, don't despawn
@@ -303,6 +378,20 @@ function StartAmbushMonitoring()
     
     Citizen.SetTimeout(5000, MonitorAmbush)
 end
+
+-- ============================================
+-- CLIENT EVENTS
+-- ============================================
+
+-- Handle cleanup notification from server
+RegisterNetEvent('ambush:client:performCleanup')
+AddEventHandler('ambush:client:performCleanup', function()
+    if Config.Debug then
+        print("[Cleanup] Received cleanup notification from server")
+    end
+    
+    PerformAmbushCleanup()
+end)
 
 -- ============================================
 -- RESOURCE STOP CLEANUP
