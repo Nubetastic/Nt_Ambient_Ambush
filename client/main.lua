@@ -26,6 +26,20 @@ BlipOverrides = {
 -- Global ambush roll value (set at start of each ambush check)
 AmbushRoll = 0
 
+Citizen.CreateThread(function()
+    local enemyGroup = GetHashKey("REL_CRIMINALS")
+    AddRelationshipGroup("REL_CRIMINALS")
+    local playerGroups = {"PLAYER", "REL_PLAYER_0", "REL_PLAYER_1", "REL_PLAYER_2", "REL_PLAYER_3"}
+    for _, name in ipairs(playerGroups) do
+        local groupHash = GetHashKey(name)
+        if groupHash ~= 0 then
+            SetRelationshipBetweenGroups(5, enemyGroup, groupHash)
+            SetRelationshipBetweenGroups(5, groupHash, enemyGroup)
+        end
+    end
+    SetRelationshipBetweenGroups(1, enemyGroup, enemyGroup)
+end)
+
 -- ============================================
 -- HELPER FUNCTIONS
 -- ============================================
@@ -418,6 +432,32 @@ AddEventHandler('ambush:client:startCooldown', function()
         print("[Ambush] Received cooldown notification from server")
     end
     
+    -- Cleanup blips when cooldown starts (ambush ended)
+    if Config.EnableBlips then
+        if Config.PedBlip.Enabled then
+            for netId, data in pairs(BlipCache) do
+                if data and data.blip then
+                    if DoesBlipExist(data.blip) then
+                        RemoveBlip(data.blip)
+                    end
+                end
+            end
+            BlipCache = {}
+        end
+        
+        if Config.AreaBlip.Enabled then
+            if AreaBlip and DoesBlipExist(AreaBlip) then
+                RemoveBlip(AreaBlip)
+                AreaBlip = nil
+            end
+            
+            if AreaRadiusBlip and DoesBlipExist(AreaRadiusBlip) then
+                RemoveBlip(AreaRadiusBlip)
+                AreaRadiusBlip = nil
+            end
+        end
+    end
+    
     -- Start cooldown
     StartCooldown(GetTotalCooldown())
 end)
@@ -565,16 +605,7 @@ Citizen.CreateThread(function()
     end
 end)
 
--- Event handler for starting cooldown when joining an ambush as a participant
-RegisterNetEvent('ambush:client:startCooldown')
-AddEventHandler('ambush:client:startCooldown', function()
-    if Config.Debug then
-        print("[Ambush] Starting cooldown as participant in another player's ambush")
-    end
-    
-    -- Start cooldown
-    StartCooldown(GetTotalCooldown())
-end)
+
 
 -- Cleanup on resource stop (now uses centralized cleanup)
 AddEventHandler('onResourceStop', function(resourceName)

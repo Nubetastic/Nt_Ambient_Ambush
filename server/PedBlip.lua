@@ -66,9 +66,9 @@ AddEventHandler('ambush:server:requestNetworkIds', function(hostServerId)
     end
 end)
 
--- Ambush ended (all NPCs dead) - start 5-minute cleanup timer
+-- Ambush ended (all NPCs dead) - start 5-minute cleanup timer and notify participants
 RegisterNetEvent('ambush:server:ambushEnded')
-AddEventHandler('ambush:server:ambushEnded', function()
+AddEventHandler('ambush:server:ambushEnded', function(ambushId)
     local src = source
     
     if not PedNetIDs[src] then
@@ -89,6 +89,9 @@ AddEventHandler('ambush:server:ambushEnded', function()
     if Config.Debug then
         print("[PedBlip Server] Ambush ended for player " .. src .. ", scheduling cleanup in 5 minutes")
     end
+    
+    -- Request players in ambush from main.lua to notify them
+    TriggerEvent('ambush:server:getPlayersForCleanup', src, ambushId)
     
     -- Schedule cleanup after 5 minutes (300000 ms)
     CleanupTimers[src] = SetTimeout(300000, function()

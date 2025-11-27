@@ -111,23 +111,11 @@ function PerformAmbushCleanup()
     -- Delete all NPCs
     DeleteAllNPCs()
     
-    -- Notify other clients in the ambush to clean up
-    if ActiveAmbush and ActiveAmbush.nearbyPlayers then
-        local otherPlayerIds = {}
-        local myServerId = GetPlayerServerId(PlayerId())
-        
-        for _, cachedPlayer in ipairs(ActiveAmbush.nearbyPlayers) do
-            if cachedPlayer.serverId ~= myServerId then
-                table.insert(otherPlayerIds, cachedPlayer.serverId)
-            end
-        end
-        
-        if #otherPlayerIds > 0 then
-            TriggerServerEvent('ambush:server:notifyClientsCleanup', otherPlayerIds)
-            if Config.Debug then
-                print("[Cleanup] Notifying " .. #otherPlayerIds .. " other clients to cleanup")
-            end
-        end
+    -- Request list of all players in ambush from server, then notify them to cleanup
+    if ActiveAmbush and ActiveAmbush.id then
+        playersResponsePending = true
+        playersResponseTimeout = 0
+        TriggerServerEvent('ambush:server:getAmbushPlayers', ActiveAmbush.id)
     end
     
     -- Clear ambush data
@@ -167,6 +155,10 @@ end
 local validationPending = false
 local validationTimeout = 0
 
+-- Track if we're waiting for ambush players response
+local playersResponsePending = false
+local playersResponseTimeout = 0
+
 -- Handle ambush validation response from server
 RegisterNetEvent('ambush:client:ambushValidationResponse')
 AddEventHandler('ambush:client:ambushValidationResponse', function(exists)
@@ -179,6 +171,38 @@ AddEventHandler('ambush:client:ambushValidationResponse', function(exists)
             print("[Cleanup] Server validation failed - ambush not tracked, performing cleanup")
         end
         PerformAmbushCleanup()
+    end
+end)
+
+-- Handle ambush players response from server (for cleanup notification)
+RegisterNetEvent('ambush:client:ambushPlayersResponse')
+AddEventHandler('ambush:client:ambushPlayersResponse', function(playersInAmbush)
+    playersResponsePending = false
+    playersResponseTimeout = 0
+    
+    if not ActiveAmbush then
+        return
+    end
+    
+    -- Build list of other players to notify (exclude host)
+    local otherPlayerIds = {}
+    local myServerId = GetPlayerServerId(PlayerId())
+    
+    for _, serverId in ipairs(playersInAmbush) do
+        if serverId ~= myServerId then
+            table.insert(otherPlayerIds, serverId)
+        end
+    end
+    
+    if #otherPlayerIds > 0 then
+        TriggerServerEvent('ambush:server:notifyClientsCleanup', otherPlayerIds)
+        if Config.Debug then
+            print("[Cleanup] Notifying " .. #otherPlayerIds .. " players to cleanup (from server list)")
+        end
+    else
+        if Config.Debug then
+            print("[Cleanup] No other players to notify for cleanup")
+        end
     end
 end)
 
@@ -355,8 +379,10 @@ local function MonitorAmbush()
         -- Remove NPC blips
         CleanupNPCBlips()
         
-        -- Notify server to start cleanup timer
-        TriggerServerEvent('ambush:server:ambushEnded')
+        -- Notify server to start cleanup timer and notify only the players in this ambush
+        if ActiveAmbush then
+            TriggerServerEvent('ambush:server:ambushEnded', ActiveAmbush.id)
+        end
         
         -- Set local cleanup timer (5 minutes)
         AmbushEndTime = GetGameTimer() + (5 * 60 * 1000)

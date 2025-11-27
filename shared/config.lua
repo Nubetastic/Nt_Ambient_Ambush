@@ -18,12 +18,12 @@ Config.Debug = false
 -- Base chance for ambush to spawn (percentage, 0-100)
 -- This is checked every CheckInterval seconds when player is outside towns
 Config.AmbushChance = {
-    Base  = 5,
-    NightAddedChance = 15 -- Chance added to base during night, if area is enabled.
+    Base  = 1,
+    NightAddedChance = 10 -- Chance added to base during night, if area is enabled.
 }
 
 -- How often to check for ambush spawns (in seconds)
-Config.CheckInterval = 60
+Config.CheckInterval = 30 -- Every 1 minute
 
 -- Base cooldown after an ambush spawns (in minutes)
 Config.BaseCooldown = 15
@@ -32,27 +32,25 @@ Config.BaseCooldown = 15
 -- BaseMin/Max: Base number of NPCs for the host player
 -- PerPlayerMin/Max: Additional NPCs per nearby player
 Config.SpawnNum = {
-    BaseMin = 2,
-    BaseMax = 4,
+    BaseMin = 3,
+    BaseMax = 5,
     PerPlayerMin = 1,
     PerPlayerMax = 3
 }
 
 
 -- Distance from player to spawn NPCs (in meters)
-Config.SpawnFrontDistance = 70
-Config.SpawnFrontHorseDistance = 70
-Config.SpawnBackDistance = 60
-Config.SpawnExtendedDistance = 100 -- Extended distance for mounted players
+Config.SpawnLeftDistance = 100
+Config.SpawnRightDistance = 100
 Config.MissionDespawnDistance = 1000 -- Allows for a chase.
 
 -- Percentage of NPCs to spawn at extended distance for mounted players
 Config.MountedPlayerSpawnPercentage = 50 -- 50% of NPCs will spawn at extended distance
 
     
--- Percentage of NPCs that spawn in front of player (rest spawn around)
--- 70 = 70% in front, 30% around
-Config.FrontSpawnPercentage = 70
+-- Percentage of NPCs that spawn on left (rest spawn on right)
+-- 50 = 50% on left, 50% on right
+Config.LeftSpawnPercentage = 50
 
 -- ============================================
 -- COMBAT SETTINGS
@@ -69,7 +67,7 @@ Config.NPCTaskCooldown = 1500
 Config.NPCGoToCooldown = 2000
 
 -- Damage modifier for NPCs (1.0 = normal, 0.5 = half damage, 2.0 = double damage)
-Config.DamageModifier = 2
+Config.DamageModifier = 1.5
 
 -- ============================================
 -- BLIP SETTINGS

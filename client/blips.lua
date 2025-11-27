@@ -157,13 +157,16 @@ end)
 
 -- Join an ambush as a participant
 RegisterNetEvent('ambush:client:joinAmbush')
-AddEventHandler('ambush:client:joinAmbush', function(hostServerId)
+AddEventHandler('ambush:client:joinAmbush', function(hostServerId, ambushId)
     if not Config.EnableBlips then
         return
     end
     if BlipOverrides.PedBlip == false then
         return
     end
+
+    -- Register with server so we get cleanup notifications
+    TriggerServerEvent('ambush:server:addPlayerToAmbush', hostServerId, ambushId)
 
     -- Initialize blips as participant
     if Config.PedBlip.Enabled then

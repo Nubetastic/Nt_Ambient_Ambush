@@ -50,53 +50,13 @@ function GetSpawnPosition(playerCoords, playerHeading, angle, distance)
 end
 
 -- Calculate spawn position for the second group
--- Rules:
--- - If player is mounted: spawn in FRONT at Config.SpawnFrontHorseDistance
--- - If player is not mounted: spawn BEHIND at Config.SpawnBackDistance
 function GetSecondGroupSpawnPosition(playerCoords, playerHeading, primaryGroupAngle)
-    local isMounted = IsPlayerMounted()
-
-    local flankingDistance
-    local flankingAngle
-
-    if isMounted then
-        flankingDistance = Config.SpawnFrontHorseDistance
-        flankingAngle = 0 -- directly in front
-        if Config.Debug then
-            print("[Ambush] Mounted: second group in front at distance " .. tostring(flankingDistance))
-        end
-    else
-        flankingDistance = Config.SpawnBackDistance
-        flankingAngle = 180 -- directly behind
-        if Config.Debug then
-            print("[Ambush] On foot: second group behind at distance " .. tostring(flankingDistance))
-        end
-    end
-
-    return GetSpawnPosition(playerCoords, playerHeading, flankingAngle, flankingDistance)
+    return GetSpawnPosition(playerCoords, playerHeading, 270.0, Config.SpawnLeftDistance)
 end
 
 -- ============================================
 -- MOUNT FUNCTIONS
 -- ============================================
-
-
--- Check if player is on a mount (horse) or in a vehicle (wagon) based on speed
-function IsPlayerMounted()
-    local playerPed = PlayerPedId()
-    local speed = GetEntitySpeed(playerPed)
-    
-    -- Speed threshold for determining if player is mounted (8.0 units/sec)
-    local speedThreshold = 8.0
-    
-    -- If speed is above threshold, player is likely mounted or in vehicle
-    if speed >= speedThreshold then
-        return true, "mount"
-    end
-    
-    return false, nil
-end
-
 
 
 -- Function to spawn a horse for an NPC
@@ -304,12 +264,12 @@ function SpawnNPC(spawnCoords, enemyModel, weaponConfig, shouldMount, isHuman)
 
     -- Set combat attributes for humans only
     if isHuman then
-        SetPedCombatAttributes(npc, 46, true) -- Always fight
+        --SetPedCombatAttributes(npc, 46, true) -- Always fight
         SetPedCombatAttributes(npc, 0, true) -- Can use cover
         SetPedCombatAttributes(npc, 1, true) -- Can use vehicles
         SetPedCombatAttributes(npc, 2, true) -- Can do drivebys
         SetPedCombatAttributes(npc, 3, true) -- Can leave vehicle
-        SetPedCombatAttributes(npc, 5, true) -- Always fight
+        --SetPedCombatAttributes(npc, 5, true) -- Always fight
         SetPedCombatAttributes(npc, 16, true) -- bullet strafe
         SetPedCombatAttributes(npc, 12, true) -- cover blind fire
         SetPedCombatAttributes(npc, 58, true) -- disable flee from combat
@@ -433,7 +393,7 @@ function SpawnAmbush(region, playerCoords)
     local selected = valid[ math.random(1, #valid) ]
 
     -- Build spawn counts from Config.SpawnNum and nearby players
-    local nearbyPlayers = GetPlayersInAmbushZone(playerCoords, Config.SpawnFrontDistance)
+    local nearbyPlayers = GetPlayersInAmbushZone(playerCoords, Config.AttackDistance)
     local playerCount = #nearbyPlayers
     local base = math.random(Config.SpawnNum.BaseMin + (AdditionalPedCount or 0), Config.SpawnNum.BaseMax + (AdditionalPedCount or 0))
     if playerCount > 1 then
@@ -494,6 +454,7 @@ function SpawnAmbush(region, playerCoords)
         id = ambushId,
         coords = playerCoords,
         npcs = {},
+        horses = {},
         npcTargets = {},
         hostPlayer = {
             id = PlayerId(),
@@ -510,8 +471,8 @@ function SpawnAmbush(region, playerCoords)
     local networkIds = {}
 
     -- Spawn locations
-    local primaryGroupAngle = math.random(-15, 15)
-    local primaryGroupPos = GetSpawnPosition(playerCoords, playerHeading, primaryGroupAngle, Config.SpawnFrontDistance)
+    local primaryGroupAngle = 90.0 + math.random(-15, 15)
+    local primaryGroupPos = GetSpawnPosition(playerCoords, playerHeading, primaryGroupAngle, Config.SpawnRightDistance)
     local secondaryGroupPos = GetSecondGroupSpawnPosition(playerCoords, playerHeading, primaryGroupAngle)
 
 
@@ -522,7 +483,6 @@ function SpawnAmbush(region, playerCoords)
         -- Reuse SpawnNPC logic already applies weapons when weaponConfig passed
     end
 
-    -- Spawn peds (humans); mount flag passed per-formation (primary=false, secondary=plan.horse)
     local function spawnOnePedAt(pos, mountFlag)
         local list = (selected.Peds and #selected.Peds > 0) and selected.Peds or {}
         if #list == 0 then return nil end
@@ -531,7 +491,17 @@ function SpawnAmbush(region, playerCoords)
         if npc and netId then
             table.insert(ActiveAmbush.npcs, npc)
             table.insert(networkIds, netId)
-            table.insert(AmbushActors, { entity = npc, type = "human", mounted = mountFlag == true, mount = nil })
+            local actor = { entity = npc, type = "human", mounted = mountFlag == true, mount = nil }
+            table.insert(AmbushActors, actor)
+            if mountFlag then
+                local horse = SpawnHorseForNPC(npc, pos)
+                if horse and DoesEntityExist(horse) then
+                    actor.mount = horse
+                    ActiveAmbush.horses = ActiveAmbush.horses or {}
+                    table.insert(ActiveAmbush.horses, horse)
+                    SetEntityAsMissionEntity(horse, true, true)
+                end
+            end
         end
         return npc
     end
@@ -582,14 +552,13 @@ function SpawnAmbush(region, playerCoords)
         secondaryCount = totalForSplit - primaryCount
     end
 
-    -- Spawn primary (never mounted)
     for i = 1, primaryCount do
         local offset = vector3(math.random(-10,10), math.random(-10,10), 0)
         local pos = vector3(primaryGroupPos.x + offset.x, primaryGroupPos.y + offset.y, primaryGroupPos.z)
         if mixedNoDogs then
-            spawnOneMixedAt(pos, false)
+            spawnOneMixedAt(pos, plan.horse)
         elseif plan.peds > 0 then
-            local ped = spawnOnePedAt(pos, false)
+            local ped = spawnOnePedAt(pos, plan.horse)
             if ped and type(ds) == "number" and hasAnimals then
                 if math.random(1,100) <= ds then
                     spawnOneAnimalAt(pos)
@@ -600,7 +569,6 @@ function SpawnAmbush(region, playerCoords)
         end
     end
 
-    -- Spawn secondary (mounted only if Horse=true)
     for i = 1, secondaryCount do
         local offset = vector3(math.random(-10,10), math.random(-10,10), 0)
         local pos = vector3(secondaryGroupPos.x + offset.x, secondaryGroupPos.y + offset.y, secondaryGroupPos.z)
@@ -656,7 +624,7 @@ function SpawnAmbush(region, playerCoords)
                 sid = GetPlayerServerId(pid)
             end
             if sid and sid ~= hostServerId then
-                TriggerServerEvent('ambush:server:notifyParticipant', sid, hostServerId)
+                TriggerServerEvent('ambush:server:notifyParticipant', sid, hostServerId, ambushId)
                 table.insert(participantServerIds, sid)
             end
         end

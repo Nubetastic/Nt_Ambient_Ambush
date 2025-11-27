@@ -44,7 +44,7 @@ function GetPlayersInAmbushZone(centerCoords, radius)
     for _, playerId in ipairs(players) do
         local playerPed = GetPlayerPed(playerId)
         local playerCoords = GetEntityCoords(playerPed)
-        
+
         if #(playerCoords - centerCoords) <= radius then
             table.insert(result, {
                 id = playerId,
@@ -185,7 +185,7 @@ function UpdateTargeting()
     if not ActiveAmbush or not ActiveAmbush.npcs then
         return
     end
-    
+
     -- Get players in the ambush zone (original method)
     local playersInZone = GetPlayersInAmbushZone(ActiveAmbush.coords, Config.AttackDistance)
     

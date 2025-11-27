@@ -79,6 +79,26 @@ AddEventHandler('ambush:server:validateAmbush', function(hostServerId, ambushId,
     TriggerClientEvent('ambush:client:ambushValidationResponse', source, exists)
 end)
 
+-- Get all players in an ambush (for cleanup notification)
+RegisterNetEvent('ambush:server:getAmbushPlayers')
+AddEventHandler('ambush:server:getAmbushPlayers', function(ambushId)
+    local hostServerId = source
+    local key = hostServerId .. "_" .. ambushId
+    
+    if ActiveAmbushes[key] then
+        local playersInAmbush = ActiveAmbushes[key].playersInAmbush
+        if Config.Debug then
+            print(string.format("[Ambush Server] Returning %d players for ambush %d from host %d", #playersInAmbush, ambushId, hostServerId))
+        end
+        TriggerClientEvent('ambush:client:ambushPlayersResponse', hostServerId, playersInAmbush)
+    else
+        if Config.Debug then
+            print(string.format("[Ambush Server] Ambush %d from host %d not found for player list", ambushId, hostServerId))
+        end
+        TriggerClientEvent('ambush:client:ambushPlayersResponse', hostServerId, {})
+    end
+end)
+
 -- Clear ambush from server when it ends
 RegisterNetEvent('ambush:server:clearAmbush')
 AddEventHandler('ambush:server:clearAmbush', function(ambushId)
@@ -96,20 +116,20 @@ end)
 -- Notify a participant to join an ambush
 -- This is triggered by the host when they detect a new player in range
 RegisterNetEvent('ambush:server:notifyParticipant')
-AddEventHandler('ambush:server:notifyParticipant', function(participantServerId, hostServerId)
-    if not participantServerId or not hostServerId then
+AddEventHandler('ambush:server:notifyParticipant', function(participantServerId, hostServerId, ambushId)
+    if not participantServerId or not hostServerId or not ambushId then
         if Config.Debug then
-            print("[Ambush Server] Invalid participant or host server ID")
+            print("[Ambush Server] Invalid participant, host server ID, or ambush ID")
         end
         return
     end
     
     if Config.Debug then
-        print(string.format("[Ambush Server] Notify participant %s to join host %s", participantServerId, hostServerId))
+        print(string.format("[Ambush Server] Notify participant %s to join host %s for ambush %d", participantServerId, hostServerId, ambushId))
     end
     
-    -- Tell the participant to initialize blips
-    TriggerClientEvent('ambush:client:joinAmbush', participantServerId, hostServerId)
+    -- Tell the participant to initialize blips and pass the ambush ID
+    TriggerClientEvent('ambush:client:joinAmbush', participantServerId, hostServerId, ambushId)
 end)
 
 -- Notify participants to start cooldown when ambush spawns
@@ -154,6 +174,29 @@ AddEventHandler('ambush:server:notifyClientsCleanup', function(clientServerIds)
     
     for _, clientId in ipairs(clientServerIds) do
         TriggerClientEvent('ambush:client:performCleanup', clientId)
+    end
+end)
+
+-- Get players in ambush for cleanup notification
+RegisterNetEvent('ambush:server:getPlayersForCleanup')
+AddEventHandler('ambush:server:getPlayersForCleanup', function(hostServerId, ambushId)
+    local key = hostServerId .. "_" .. ambushId
+    
+    if ActiveAmbushes[key] then
+        local playersInAmbush = ActiveAmbushes[key].playersInAmbush
+        
+        if Config.Debug then
+            print(string.format("[Ambush Server] Notifying %d players of cleanup for ambush %d", #playersInAmbush, ambushId))
+        end
+        
+        -- Notify only the players in this specific ambush
+        for _, playerId in ipairs(playersInAmbush) do
+            TriggerClientEvent('ambush:client:startCooldown', playerId)
+        end
+    else
+        if Config.Debug then
+            print(string.format("[Ambush Server] Ambush %d from host %d not found for cleanup notification", ambushId, hostServerId))
+        end
     end
 end)
 
