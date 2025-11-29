@@ -80,3 +80,19 @@ exports['Nt_Ambient_Ambush']:SetAmbushPeds(groupName)
 - Forces the next ambush to use the specified group from `ConfigRegions.Groups`.
 - Override persists until the ambush finishes; it resets automatically on ambush cleanup.
 - Ensure the provided key exists; supports ped or animal groups as defined in your config.
+
+
+
+## SetAmbushPeds
+```lua
+exports['Nt_Ambient_Ambush']:SetMissionCooldown(Num)
+```
+**Parameters:**
+- `Num` (number): Any positive number
+**Returns:**
+- `boolean`: Success status (true if set successfully)
+**Reset:**
+- 0 will reset it.
+**Use:**
+- Allows ambient ambushes to have long timers and mission use to be on short timers.
+- This will temporarily override the config value for `Config.Mission.Cooldown`.

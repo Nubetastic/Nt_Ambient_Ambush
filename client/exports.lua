@@ -259,3 +259,15 @@ end)
 
 -- AAChance and AARegion commands now live in client/test.lua and
 -- are only registered when Config.Debug is true.
+
+-- Export: Set temporary cooldown time
+exports('SetMissionCooldown', function(tempCooldown)
+
+    -- Ensure non-negative
+    if type(tempCooldown) == "number" then
+        missionCooldown = tempCooldown * 1000 or 0
+        return true
+    else
+        return false
+    end
+end)

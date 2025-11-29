@@ -72,7 +72,7 @@ ConfigRegions.Regions = {
                     Sidearms = "Common", SidearmsChance = 100,
                     Longarms = "Common", LongarmsChance = 50,
                     DogSpawnChance = 30, -- per-human companion spawn chance
-                    Horse = true -- mount only for secondary formation
+                    Horse = false -- mount only for secondary formation
                 }
             },
         }

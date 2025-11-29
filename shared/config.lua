@@ -9,7 +9,7 @@ Config = {}
 -- ============================================
 
 -- Enable debug messages in console
-Config.Debug = false
+Config.Debug = true
 
 -- ============================================
 -- AMBUSH SPAWN SETTINGS
@@ -18,12 +18,12 @@ Config.Debug = false
 -- Base chance for ambush to spawn (percentage, 0-100)
 -- This is checked every CheckInterval seconds when player is outside towns
 Config.AmbushChance = {
-    Base  = 1,
+    Base  = 5,
     NightAddedChance = 10 -- Chance added to base during night, if area is enabled.
 }
 
 -- How often to check for ambush spawns (in seconds)
-Config.CheckInterval = 30 -- Every 1 minute
+Config.CheckInterval = 15 * 60 -- Every 1 minute
 
 -- Base cooldown after an ambush spawns (in minutes)
 Config.BaseCooldown = 15
@@ -32,8 +32,8 @@ Config.BaseCooldown = 15
 -- BaseMin/Max: Base number of NPCs for the host player
 -- PerPlayerMin/Max: Additional NPCs per nearby player
 Config.SpawnNum = {
-    BaseMin = 3,
-    BaseMax = 5,
+    BaseMin = 2,
+    BaseMax = 4,
     PerPlayerMin = 1,
     PerPlayerMax = 3
 }

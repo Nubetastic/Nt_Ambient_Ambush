@@ -8,6 +8,7 @@
 -- State variables
 cooldownEndTime = 0
 ambushId = 0
+missionCooldown = 0
 
 -- Additional values from exports
 AdditionalAmbushChance = 0
@@ -25,20 +26,6 @@ BlipOverrides = {
 
 -- Global ambush roll value (set at start of each ambush check)
 AmbushRoll = 0
-
-Citizen.CreateThread(function()
-    local enemyGroup = GetHashKey("REL_CRIMINALS")
-    AddRelationshipGroup("REL_CRIMINALS")
-    local playerGroups = {"PLAYER", "REL_PLAYER_0", "REL_PLAYER_1", "REL_PLAYER_2", "REL_PLAYER_3"}
-    for _, name in ipairs(playerGroups) do
-        local groupHash = GetHashKey(name)
-        if groupHash ~= 0 then
-            SetRelationshipBetweenGroups(5, enemyGroup, groupHash)
-            SetRelationshipBetweenGroups(5, groupHash, enemyGroup)
-        end
-    end
-    SetRelationshipBetweenGroups(1, enemyGroup, enemyGroup)
-end)
 
 -- ============================================
 -- HELPER FUNCTIONS
@@ -62,16 +49,6 @@ function GetTotalAmbushChance(region)
     end
     
     return baseChance + nightBonus + AdditionalAmbushChance
-end
-
--- Get cooldown duration
-function GetTotalCooldown()
-    return Config.BaseCooldown
-end
-
--- Check if player is in cooldown
-function IsInCooldown()
-    return GetGameTimer() < cooldownEndTime
 end
 
 -- Start cooldown timer
@@ -457,9 +434,9 @@ AddEventHandler('ambush:client:startCooldown', function()
             end
         end
     end
-    
+    missionCooldown = 0
     -- Start cooldown
-    StartCooldown(GetTotalCooldown())
+    StartCooldown(Config.BaseCooldown)
 end)
 
 -- Event to handle ambush end notification from server
@@ -519,7 +496,7 @@ function CheckForAmbush()
     end
     
     -- Don't check if in cooldown
-    if IsInCooldown() then
+    if GetGameTimer() < cooldownEndTime then
         if Config.Debug then
             local remainingTime = math.ceil((cooldownEndTime - GetGameTimer()) / 1000 / 60)
             print("[Ambush] In cooldown, " .. remainingTime .. " minutes remaining")
@@ -600,7 +577,15 @@ Citizen.CreateThread(function()
     
     -- Main check loop
     while true do
-        Wait(Config.CheckInterval * 1000)
+        if missionCooldown ~= 0 then
+            Wait(missionCooldown)
+        else
+            local timer = Config.CheckInterval
+            while timer > 0 do
+                timer = timer - 1 - missionCooldown
+                Wait(1000)
+            end
+        end
         CheckForAmbush()
     end
 end)

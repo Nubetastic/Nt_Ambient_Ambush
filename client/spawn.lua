@@ -199,7 +199,7 @@ function SpawnNPC(spawnCoords, enemyModel, weaponConfig, shouldMount, isHuman)
     SetEntityCanBeDamaged(npc, true)
     
     -- Configure NPC
-    SetPedRelationshipGroupHash(npc, GetHashKey("REL_CRIMINALS"))
+    SetPedRelationshipGroupHash(npc, GetHashKey("Nt_Enemy"))
 
     -- default humans
     if isHuman == nil then isHuman = true end
