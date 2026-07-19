@@ -69,24 +69,26 @@ function GetPlayersAroundNPCs()
     
     -- Initialize scanned status for each NPC
     local npcScanned = {}
-    for _, npc in ipairs(ActiveAmbush.npcs) do
-        npcScanned[npc] = false
+    for _, npcNetId in ipairs(ActiveAmbush.npcs) do
+        npcScanned[npcNetId] = false
     end
     
     -- Scan for players around each NPC
-    for _, npc in ipairs(ActiveAmbush.npcs) do
-        if DoesEntityExist(npc) and not IsEntityDead(npc) and not npcScanned[npc] then
+    for _, npcNetId in ipairs(ActiveAmbush.npcs) do
+        local npc = ResolveAmbushEntity(npcNetId)
+        if npc ~= 0 and not IsEntityDead(npc) and not npcScanned[npcNetId] then
             local npcCoords = GetEntityCoords(npc)
-            npcScanned[npc] = true
+            npcScanned[npcNetId] = true
             
             -- Find nearby NPCs to avoid redundant scans
             local nearbyNPCs = {}
-            for _, otherNPC in ipairs(ActiveAmbush.npcs) do
-                if DoesEntityExist(otherNPC) and not IsEntityDead(otherNPC) and not npcScanned[otherNPC] and otherNPC ~= npc then
+            for _, otherNPCNetId in ipairs(ActiveAmbush.npcs) do
+                local otherNPC = ResolveAmbushEntity(otherNPCNetId)
+                if otherNPC ~= 0 and not IsEntityDead(otherNPC) and not npcScanned[otherNPCNetId] and otherNPC ~= npc then
                     local otherCoords = GetEntityCoords(otherNPC)
                     if #(npcCoords - otherCoords) <= detectionRadius / 2 then
                         table.insert(nearbyNPCs, otherNPC)
-                        npcScanned[otherNPC] = true
+                        npcScanned[otherNPCNetId] = true
                     end
                 end
             end
@@ -141,7 +143,8 @@ end
 
 -- Assign a target to an NPC and engage in combat (throttled to prevent stutter)
 function AssignTargetToNPC(npc, targetPed)
-    if not DoesEntityExist(npc) or not DoesEntityExist(targetPed) then
+    local npcEntity = ResolveAmbushEntity(npc, true, 500)
+    if npcEntity == 0 or not DoesEntityExist(targetPed) then
         return false
     end
 
@@ -162,16 +165,16 @@ function AssignTargetToNPC(npc, targetPed)
 
     -- If already targeting this ped and in combat, skip reassignment
     local currentTargetPed = ActiveAmbush.npcTargets[npc]
-    if currentTargetPed and currentTargetPed == targetPed and IsPedInCombat(npc) then
+    if currentTargetPed and currentTargetPed == targetPed and IsPedInCombat(npcEntity) then
         return false
     end
 
     -- Only clear tasks if we need to switch targets or NPC isn't in combat
-    if (not IsPedInCombat(npc)) or (currentTargetPed ~= targetPed) then
-        ClearPedTasks(npc)
+    if (not IsPedInCombat(npcEntity)) or (currentTargetPed ~= targetPed) then
+        ClearPedTasks(npcEntity)
     end
 
-    TaskCombatPed(npc, targetPed, 0, 16)
+    TaskCombatPed(npcEntity, targetPed, 0, 16)
 
     -- Update caches
     ActiveAmbush.npcTargets[npc] = targetPed
@@ -188,6 +191,9 @@ function UpdateTargeting()
 
     -- Get players in the ambush zone (original method)
     local playersInZone = GetPlayersInAmbushZone(ActiveAmbush.coords, Config.AttackDistance)
+
+    -- Cache the zone players for other systems, such as death monitoring
+    ActiveAmbush.cachedZonePlayers = playersInZone
     
     -- Get players around NPCs (new method)
     local playersAroundNPCs = GetPlayersAroundNPCs()
@@ -249,15 +255,16 @@ function AssignTargetsToNPCs()
 
     for i = 1, #AmbushActors do
         local actor = AmbushActors[i]
-        if actor and actor.entity and DoesEntityExist(actor.entity) and not IsEntityDead(actor.entity) then
-            local target = acquireNearestPlayer(actor.entity)
+        local entity = actor and actor.netId and ResolveAmbushEntity(actor.netId) or 0
+        if entity ~= 0 and DoesEntityExist(entity) and not IsEntityDead(entity) then
+            local target = acquireNearestPlayer(entity)
             if target then
                 -- Delegate combat tasking to centralized function which only issues TaskCombatPed on target change/initial set
-                AssignTargetToNPC(actor.entity, target)
+                AssignTargetToNPC(actor.netId, target)
                 -- 30% chance to make the NPC shout when acquiring/refreshing target
                 local voice = math.random(1, 100)
                 if voice > 70 then
-                    pcall(NPCCombatVoice, actor.entity)
+                    pcall(NPCCombatVoice, entity)
                 end
             end
         end
@@ -282,8 +289,9 @@ function CheckAndFixStuckNPCs()
     local playerPed = PlayerPedId()
     local playerCoords = GetEntityCoords(playerPed)
     
-    for _, npc in ipairs(ActiveAmbush.npcs) do
-        if DoesEntityExist(npc) and not IsEntityDead(npc) then
+    for _, npcNetId in ipairs(ActiveAmbush.npcs) do
+        local npc = ResolveAmbushEntity(npcNetId, true, 500)
+        if npc ~= 0 and DoesEntityExist(npc) and not IsEntityDead(npc) then
             local npcCoords = GetEntityCoords(npc)
             local distanceToPlayer = #(npcCoords - playerCoords)
             
@@ -305,62 +313,12 @@ function CheckAndFixStuckNPCs()
                         
                         if DoesEntityExist(npc) and not IsEntityDead(npc) and DoesEntityExist(playerPed) then
                             -- Set combat attributes and assign target
-                            AssignTargetToNPC(npc, playerPed)
+                            AssignTargetToNPC(npcNetId, playerPed)
 
                         end
                         Wait(1500)
                     end)
                 end
-            end
-        end
-    end
-end
-
--- ============================================
--- BLIP MANAGEMENT
--- ============================================
-
--- Initialize blips for the ambush
-function InitializeBlips()
-    if not ActiveAmbush then
-        return
-    end
-    
-    -- Create area blip
-    if Config.EnableBlips and (BlipOverrides.AreaBlip == nil and Config.AreaBlip.Enabled or BlipOverrides.AreaBlip == true) then
-        -- Create area blip
-        AreaBlip = Citizen.InvokeNative(0x45F13B7E0A15C880, -1282792512, ActiveAmbush.coords.x, ActiveAmbush.coords.y, ActiveAmbush.coords.z, Config.AreaBlip.Radius)
-        
-        -- Set blip properties
-        Citizen.InvokeNative(0x9CB1A1623062F402, AreaBlip, "Ambush") -- SetBlipName
-        Citizen.InvokeNative(0x662D364ABF16DE2F, AreaBlip, GetHashKey(Config.AreaBlip.Color)) -- BlipAddModifier
-        Citizen.InvokeNative(0x9B6A58FDB0024F12, AreaBlip, Config.AreaBlip.Scale) -- SetBlipScale
-        Citizen.InvokeNative(0x45FF974EEE1C8734, AreaBlip, Config.AreaBlip.Alpha) -- SetBlipAlpha
-        
-        -- Notify server of area blip coordinates for other players
-        TriggerServerEvent('ambush:server:setAreaBlipCoords', ActiveAmbush.coords)
-    end
-    
-    -- Create NPC blips
-    if Config.EnableBlips and (BlipOverrides.PedBlip == nil and Config.PedBlip.Enabled or BlipOverrides.PedBlip == true) then
-        for _, npc in ipairs(ActiveAmbush.npcs) do
-            if DoesEntityExist(npc) then
-                -- Create blip for NPC
-                local blip = Citizen.InvokeNative(0x23F74C2FDA6E7C61, Config.PedBlip.Sprite, npc) -- BlipAddForEntity
-                
-                -- Set blip properties
-                Citizen.InvokeNative(0x662D364ABF16DE2F, blip, GetHashKey(Config.PedBlip.Color)) -- BlipAddModifier
-                Citizen.InvokeNative(0x9B6A58FDB0024F12, blip, Config.PedBlip.Scale) -- SetBlipScale
-                
-                -- Store blip in cache
-                local netId = NetworkGetNetworkIdFromEntity(npc)
-                BlipCache[netId] = {
-                    blip = blip,
-                    entity = npc
-                }
-                
-                -- Notify server of NPC network ID for other players
-                TriggerServerEvent('ambush:server:addNetworkId', netId)
             end
         end
     end
@@ -388,15 +346,16 @@ Citizen.CreateThread(function()
             CheckAndFixStuckNPCs()
             
             -- Additional check for NPCs that might be not engaging
-            for _, npc in ipairs(ActiveAmbush.npcs) do
-                if DoesEntityExist(npc) and not IsEntityDead(npc) then
+            for _, npcNetId in ipairs(ActiveAmbush.npcs) do
+                local npc = ResolveAmbushEntity(npcNetId)
+                if npc ~= 0 and DoesEntityExist(npc) and not IsEntityDead(npc) then
                     -- Check if NPC is in combat
                     if not IsPedInCombat(npc) then
                         -- If NPC is not in combat, force it to engage with the nearest player
                         local playerPed = PlayerPedId()
                         if DoesEntityExist(playerPed) then
                             -- Assign target to NPC
-                            AssignTargetToNPC(npc, playerPed)
+                            AssignTargetToNPC(npcNetId, playerPed)
                             
                         end
                     end

@@ -65,14 +65,14 @@ ConfigRegions.Regions = {
                     "u_m_m_bht_odriscollsleeping",
                     "u_m_m_odriscollbrawler_01",
                 },
-                Animals = { "re_lostdog_dogs_01", "A_C_DogAmericanFoxhound_01" },
+                --Animals = { "re_lostdog_dogs_01", "A_C_DogAmericanFoxhound_01" },
                 Settings = {
                     Timofday = "Anytime", -- Day, Night, Anytime
                     Melee = "Common", MeleeChance = 100,
                     Sidearms = "Common", SidearmsChance = 100,
                     Longarms = "Common", LongarmsChance = 50,
                     DogSpawnChance = 30, -- per-human companion spawn chance
-                    Horse = false -- mount only for secondary formation
+                    Horse = true -- mount only for secondary formation
                 }
             },
         }
@@ -158,7 +158,8 @@ ConfigRegions.Regions = {
                     Timofday = "Anytime",
                     Melee = "Common", MeleeChance = 100,
                     Sidearms = "Mountain", SidearmsChance = 100,
-                    Longarms = "Mountain", LongarmsChance = 50
+                    Longarms = "Mountain", LongarmsChance = 50,
+                    Horse = false,
                 }
             }
         }
@@ -249,7 +250,7 @@ ConfigRegions.Regions = {
                     Timofday = "Anytime",
                     Melee = "Common", MeleeChance = 100,
                     Sidearms = "Common", SidearmsChance = 100,
-                    Longarms = "Common", LongarmsChance = 50
+                    Longarms = "Common", LongarmsChance = 50,
                 }
             }
         }
@@ -288,7 +289,8 @@ ConfigRegions.Regions = {
                     Timofday = "Night",
                     Melee = "Swamp", MeleeChance = 100,
                     Sidearms = nil, SidearmsChance = 100,
-                    Longarms = "Swamp", LongarmsChance = 20
+                    Longarms = "Swamp", LongarmsChance = 20,
+                    Horse = false,
                 }
             }
         }
@@ -305,7 +307,8 @@ ConfigRegions.Regions = {
                     Timofday = "Night",
                     Melee = "Swamp", MeleeChance = 100,
                     Sidearms = nil, SidearmsChance = 100,
-                    Longarms = "Swamp", LongarmsChance = 20
+                    Longarms = "Swamp", LongarmsChance = 20,
+                    Horse = false,
                 }
             }
         }
@@ -322,7 +325,8 @@ ConfigRegions.Regions = {
                     Timofday = "Night",
                     Melee = "Swamp", MeleeChance = 100,
                     Sidearms = nil, SidearmsChance = 100,
-                    Longarms = "Swamp", LongarmsChance = 20
+                    Longarms = "Swamp", LongarmsChance = 20,
+                    Horse = false,
                 }
             }
         }
@@ -332,7 +336,7 @@ ConfigRegions.Regions = {
     -- AMBARINO
     -- ============================================
     ["GRIZZLIES_EAST"] = {
-        RegionHash = 1645618177,
+        RegionHash = -120156735,
         ZoneTypeId = 10,
         Name = "Grizzlies East",
         EnemyGroups = {
@@ -355,7 +359,7 @@ ConfigRegions.Regions = {
         }
     },
     ["GRIZZLIES_WEST"] = {
-        RegionHash = -120156735,
+        RegionHash =  1645618177,
         ZoneTypeId = 10,
         Name = "Grizzlies West",
         EnemyGroups = {

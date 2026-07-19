@@ -17,28 +17,75 @@ BlipCache = {}
 AreaBlip = nil
 AreaRadiusBlip = nil
 
+-- Resolve a network ID to the current local entity handle.
+-- This keeps ambush cleanup/AI stable even if the entity handle changes.
+function ResolveAmbushEntity(netId, requestControl, timeoutMs)
+    if not netId or netId == 0 then
+        return 0
+    end
+
+    local deadline = nil
+    if timeoutMs and timeoutMs > 0 then
+        deadline = GetGameTimer() + timeoutMs
+    end
+
+    repeat
+        local entity = NetworkGetEntityFromNetworkId(netId)
+        if entity and entity ~= 0 and DoesEntityExist(entity) then
+            if requestControl and NetworkHasControlOfEntity and NetworkRequestControlOfEntity then
+                local controlDeadline = GetGameTimer() + math.max(250, timeoutMs or 250)
+                while DoesEntityExist(entity) and not NetworkHasControlOfEntity(entity) and GetGameTimer() < controlDeadline do
+                    NetworkRequestControlOfEntity(entity)
+                    Wait(0)
+                end
+            end
+
+            return entity
+        end
+
+        if not deadline then
+            break
+        end
+
+        Wait(0)
+    until GetGameTimer() >= deadline
+
+    return 0
+end
+
+local function DeleteAmbushEntityByNetId(netId, label)
+    local entity = ResolveAmbushEntity(netId, true, 500)
+    if entity == 0 then
+        return false
+    end
+
+    SetEntityAsMissionEntity(entity, true, true)
+    DeleteEntity(entity)
+
+    if Config.Debug then
+        print(string.format("[Cleanup] Deleted %s net id %s", tostring(label or "entity"), tostring(netId)))
+    end
+
+    return true
+end
+
 -- ============================================
 -- CLEANUP FUNCTIONS
 -- ============================================
 
 -- Remove all NPC blips
-local function CleanupNPCBlips()
-    if not Config.EnableBlips or not Config.PedBlip.Enabled then
+function CleanupNPCBlips()
+    if not BlipCache then
         return
     end
     
-    -- Remove all blips from cache
-    for netId, data in pairs(BlipCache) do
+    for _, data in pairs(BlipCache) do
         if data.blip and DoesBlipExist(data.blip) then
-            Citizen.InvokeNative(0x86A652570E5F25DD, Citizen.PointerValueIntInitialized(data.blip)) -- RemoveBlip
-
+            RemoveBlip(data.blip)
         end
     end
     
-    -- Clear the cache
     BlipCache = {}
-    
-
 end
 
 -- Remove area blip
@@ -64,23 +111,86 @@ local function DeleteAllNPCs()
     if not ActiveAmbush then
         return
     end
-    
-    -- Delete NPCs
-    if ActiveAmbush.npcs then
-        for _, npc in ipairs(ActiveAmbush.npcs) do
-            if DoesEntityExist(npc) then
-                DeleteEntity(npc)
-            end
-        end
-    end
-    
+
     -- Delete horses
     if ActiveAmbush.horses then
-        for _, horse in ipairs(ActiveAmbush.horses) do
-            if DoesEntityExist(horse) then
-                DeleteEntity(horse)
-                if Config.Debug then
-                    print("[Cleanup] Deleted horse: " .. horse)
+        for _, horseNetId in ipairs(ActiveAmbush.horses) do
+            DeleteAmbushEntityByNetId(horseNetId, "horse")
+        end
+    end
+
+    -- Delete NPCs
+    if ActiveAmbush.npcs then
+        for _, npcNetId in ipairs(ActiveAmbush.npcs) do
+            DeleteAmbushEntityByNetId(npcNetId, "NPC")
+        end
+    end
+
+
+end
+
+local function ReleaseDeadNPCsAndMounts()
+    if not ActiveAmbush or not ActiveAmbush.npcs then
+        return
+    end
+
+    ActiveAmbush.deadCleanup = ActiveAmbush.deadCleanup or {
+        npcs = {},
+        horses = {}
+    }
+
+    for _, npcNetId in ipairs(ActiveAmbush.npcs) do
+        local npc = ResolveAmbushEntity(npcNetId, true, 500)
+        if npc ~= 0 and DoesEntityExist(npc) and IsEntityDead(npc) and not ActiveAmbush.deadCleanup.npcs[npcNetId] then
+            ActiveAmbush.deadCleanup.npcs[npcNetId] = true
+
+            if SetPedAsNoLongerNeeded then
+                SetPedAsNoLongerNeeded(npc)
+            end
+            if SetEntityAsMissionEntity then
+                SetEntityAsMissionEntity(npc, false, false)
+            end
+            if SetEntityAsNoLongerNeeded then
+                SetEntityAsNoLongerNeeded(npc)
+            end
+
+            local mountNetId = nil
+            if AmbushActors then
+                for _, actor in ipairs(AmbushActors) do
+                    if actor.netId == npcNetId then
+                        mountNetId = actor.mountNetId
+                        break
+                    end
+                end
+            end
+
+            if mountNetId and mountNetId ~= 0 and not ActiveAmbush.deadCleanup.horses[mountNetId] then
+                local horse = ResolveAmbushEntity(mountNetId, true, 500)
+                if horse ~= 0 and DoesEntityExist(horse) then
+                    ActiveAmbush.deadCleanup.horses[mountNetId] = true
+
+                    if not IsEntityDead(horse) then
+                        ClearPedTasks(horse)
+                        local playerPed = PlayerPedId()
+                        if TaskSmartFleePed and playerPed and DoesEntityExist(playerPed) then
+                            TaskSmartFleePed(horse, playerPed, 150.0, 5000, false, false)
+                        end
+                    end
+
+                    Citizen.SetTimeout(3500, function()
+                        local liveHorse = ResolveAmbushEntity(mountNetId, true, 250)
+                        if liveHorse ~= 0 and DoesEntityExist(liveHorse) then
+                            if SetEntityAsMissionEntity then
+                                SetEntityAsMissionEntity(liveHorse, false, false)
+                            end
+                            if SetPedAsNoLongerNeeded then
+                                SetPedAsNoLongerNeeded(liveHorse)
+                            end
+                            if SetEntityAsNoLongerNeeded then
+                                SetEntityAsNoLongerNeeded(liveHorse)
+                            end
+                        end
+                    end)
                 end
             end
         end
@@ -98,9 +208,6 @@ function PerformAmbushCleanup()
     if ActiveAmbush then
         TriggerServerEvent('ambush:server:clearAmbush', ActiveAmbush.id)
     end
-    
-    -- Notify server to clear network IDs
-    TriggerServerEvent('ambush:server:clearNetworkIds')
     
     -- Cleanup area blip
     CleanupAreaBlip()
@@ -241,8 +348,12 @@ local function AreAllNPCsDead()
         return false
     end
     
-    for _, npc in ipairs(ActiveAmbush.npcs) do
-        if DoesEntityExist(npc) and not IsEntityDead(npc) then
+    for _, npcNetId in ipairs(ActiveAmbush.npcs) do
+        local npc = ResolveAmbushEntity(npcNetId)
+        if npc == 0 or not DoesEntityExist(npc) then
+            return false
+        end
+        if not IsEntityDead(npc) then
             return false
         end
     end
@@ -288,8 +399,9 @@ local function ArePlayersNearNPCs()
     local debugPrinted = false
     
     -- Check each NPC for nearby players
-    for _, npc in ipairs(ActiveAmbush.npcs) do
-        if DoesEntityExist(npc) and not IsEntityDead(npc) then
+    for _, npcNetId in ipairs(ActiveAmbush.npcs) do
+        local npc = ResolveAmbushEntity(npcNetId)
+        if npc ~= 0 and not IsEntityDead(npc) then
             local npcCoords = GetEntityCoords(npc)
             
             -- Check if any player is near this NPC
@@ -319,6 +431,9 @@ local function MonitorAmbush()
     
     -- Validate ambush with server every second while active
     ValidateAmbushWithServer()
+    
+    -- Release dead NPC bodies and let mounted horses flee before natural cleanup
+    ReleaseDeadNPCsAndMounts()
     
     -- First check if players are near NPCs (new method)
     if ArePlayersNearNPCs() then
@@ -373,16 +488,13 @@ local function MonitorAmbush()
         -- Debug message for targeting is now handled in AssignTargetsToNPCs() to reduce spam
     else
         -- All NPCs are dead, proceed with cleanup
+        ReleaseDeadNPCsAndMounts()
+        
         -- Remove area blip immediately when all NPCs die
         CleanupAreaBlip()
         
         -- Remove NPC blips
         CleanupNPCBlips()
-        
-        -- Notify server to start cleanup timer and notify only the players in this ambush
-        if ActiveAmbush then
-            TriggerServerEvent('ambush:server:ambushEnded', ActiveAmbush.id)
-        end
         
         -- Set local cleanup timer (5 minutes)
         AmbushEndTime = GetGameTimer() + (5 * 60 * 1000)

@@ -265,7 +265,7 @@ exports('SetMissionCooldown', function(tempCooldown)
 
     -- Ensure non-negative
     if type(tempCooldown) == "number" then
-        missionCooldown = tempCooldown * 1000 or 0
+        missionCooldown = tempCooldown or 0
         return true
     else
         return false

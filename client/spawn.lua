@@ -4,6 +4,27 @@
 -- This file contains all functions related to spawning NPCs for ambushes
 -- Handles spawn position calculation, NPC creation, and ambush initialization
 
+local enemyGroupHash = GetHashKey("Nt_Enemy")
+local enemyNoBlipGroupHash = GetHashKey("Nt_Enemy_NoBlip")
+
+CreateThread(function()
+    AddRelationshipGroup("Nt_Enemy", enemyGroupHash)
+    AddRelationshipGroup("Nt_Enemy_NoBlip", enemyNoBlipGroupHash)
+end)
+
+local function shouldAssignBlipGroup()
+    if not Config.EnableBlips then
+        return false
+    end
+
+    local override = BlipOverrides and BlipOverrides.PedBlip
+    if override ~= nil then
+        return override
+    end
+
+    return Config.PedBlip and Config.PedBlip.Enabled
+end
+
 -- ============================================
 -- SPAWN POSITION FUNCTIONS
 -- ============================================
@@ -49,9 +70,12 @@ function GetSpawnPosition(playerCoords, playerHeading, angle, distance)
     return vector3(spawnPos.x, spawnPos.y, groundZ + 1.0)
 end
 
+
+
 -- Calculate spawn position for the second group
 function GetSecondGroupSpawnPosition(playerCoords, playerHeading, primaryGroupAngle)
-    return GetSpawnPosition(playerCoords, playerHeading, 270.0, Config.SpawnLeftDistance)
+    -- Keep the secondary group centered near the road spawn point; the fine spread is handled per-NPC.
+    return playerCoords
 end
 
 -- ============================================
@@ -59,9 +83,8 @@ end
 -- ============================================
 
 
--- Function to spawn a horse for an NPC
-function SpawnHorseForNPC(npc, spawnCoords)
-    -- Horse models that can be used by NPCs
+-- Internal horse spawn (fast, no mounting)
+function SpawnHorseForNPC_Internal(spawnCoords)
     local horseModels = {
         "A_C_Horse_AmericanPaint_Greyovero",
         "A_C_Horse_AmericanStandardbred_Black",
@@ -70,53 +93,61 @@ function SpawnHorseForNPC(npc, spawnCoords)
         "A_C_Horse_KentuckySaddle_Grey"
     }
     
-    -- Select a random horse model
     local horseModel = horseModels[math.random(1, #horseModels)]
     local modelHash = GetHashKey(horseModel)
     
-    -- Request the model
     RequestModel(modelHash)
     
     local timeout = 0
-    while not HasModelLoaded(modelHash) and timeout < 100 do
+    while not HasModelLoaded(modelHash) and timeout < 50 do
         Wait(10)
         timeout = timeout + 1
     end
     
     if not HasModelLoaded(modelHash) then
-        if Config.Debug then
-            print("[Ambush] Failed to load horse model: " .. horseModel)
-        end
         return nil
     end
     
-    -- Create the horse slightly offset from the NPC
-    local offsetX = math.random(-3, 3)
-    local offsetY = math.random(-3, 3)
+    local offsetX = math.random(-2, 2)
+    local offsetY = math.random(-2, 2)
     local horse = CreatePed(modelHash, spawnCoords.x + offsetX, spawnCoords.y + offsetY, spawnCoords.z, 0.0, true, false, false, false)
+    local netId = 0
     
     if not DoesEntityExist(horse) then
         SetModelAsNoLongerNeeded(modelHash)
         return nil
     end
     
-    -- Set as mission entity to prevent despawning
     SetEntityAsMissionEntity(horse, true, true)
-    
-    -- Configure the horse
+    NetworkRegisterEntityAsNetworked(horse)
+    netId = NetworkGetNetworkIdFromEntity(horse)
+    if netId and netId ~= 0 then
+        SetNetworkIdExistsOnAllMachines(netId, true)
+    end
     Citizen.InvokeNative(0x283978A15512B2FE, horse, true) -- _SET_RANDOM_OUTFIT_VARIATION
-    
-    -- Add a saddle to the horse
     Citizen.InvokeNative(0xD3A7B003ED343FD9, horse, 0x20359E53, true, true, true) -- _APPLY_SHOP_ITEM_TO_PED (saddle)
     
-    -- Make the NPC mount the horse
+    return horse, netId
+end
+
+-- Function to spawn a horse for an NPC and mount it
+function SpawnHorseForNPC(npc, spawnCoords)
+    local horse, horseNetId = SpawnHorseForNPC_Internal(spawnCoords)
+    
+    if not horse or not DoesEntityExist(horse) then
+        if Config.Debug then
+            print("[Ambush] Failed to spawn horse for NPC " .. npc)
+        end
+        return nil, nil
+    end
+    
     Citizen.InvokeNative(0x028F76B6E78246EB, npc, horse, -1, true) -- SET_PED_ON_MOUNT
     
     if Config.Debug then
         print("[Ambush] Spawned horse " .. horse .. " for NPC " .. npc)
     end
     
-    return horse
+    return horse, horseNetId
 end
 
 -- ============================================
@@ -133,7 +164,21 @@ function GetRandomWeapon(weaponList)
 end
 
 -- Spawn a single NPC
-function SpawnNPC(spawnCoords, enemyModel, weaponConfig, shouldMount, isHuman)
+function SpawnNPC(spawnCoords, enemyModel, weaponConfig, shouldMount, isHuman, preMount)
+    -- If preMount is enabled, spawn horse first and mount NPC to it during creation
+    local horse = nil
+    local horseNetId = nil
+    local horseSpawnCoords = spawnCoords
+    
+    if preMount then
+        horse, horseNetId = SpawnHorseForNPC_Internal(spawnCoords)
+        if horse and DoesEntityExist(horse) then
+            horseSpawnCoords = GetEntityCoords(horse)
+        else
+            preMount = false
+        end
+    end
+    
     -- Load model
     local modelHash = GetHashKey(enemyModel)
     RequestModel(modelHash)
@@ -148,7 +193,10 @@ function SpawnNPC(spawnCoords, enemyModel, weaponConfig, shouldMount, isHuman)
         if Config.Debug then
             print("[Ambush] Failed to load model: " .. enemyModel)
         end
-        return nil, nil
+        if horse and DoesEntityExist(horse) then
+            DeleteEntity(horse)
+        end
+        return nil, nil, nil, nil
     end
     
     -- Create networked ped (5th parameter MUST be true for multiplayer)
@@ -156,15 +204,25 @@ function SpawnNPC(spawnCoords, enemyModel, weaponConfig, shouldMount, isHuman)
     local heading = math.random(0, 360)
     
     -- Use CreatePed_2 for RedM which is more reliable for networked entities
-    local npc = Citizen.InvokeNative(0xD49F9B0955C367DE, modelHash, spawnCoords.x, spawnCoords.y, spawnCoords.z, heading, true, false, false, false) -- CreatePed_2
+    local npc = Citizen.InvokeNative(0xD49F9B0955C367DE, modelHash, horseSpawnCoords.x, horseSpawnCoords.y, horseSpawnCoords.z, heading, true, false, false, false) -- CreatePed_2
     
     if not DoesEntityExist(npc) then
         SetModelAsNoLongerNeeded(modelHash)
-        return nil, nil
+        if horse and DoesEntityExist(horse) then
+            DeleteEntity(horse)
+        end
+        return nil, nil, nil, nil
     end
-    
+
     -- Set as mission entity to prevent despawning
     SetEntityAsMissionEntity(npc, true, true)
+    
+    
+    -- If horse exists and we're pre-mounting, mount immediately
+    if preMount and horse and DoesEntityExist(horse) then
+        Citizen.InvokeNative(0x028F76B6E78246EB, npc, horse, -1, true) -- SET_PED_ON_MOUNT
+        Wait(100)
+    end
     
     -- Wait for entity to fully initialize (reduced from 100ms to 50ms)
     Wait(50)
@@ -179,7 +237,7 @@ function SpawnNPC(spawnCoords, enemyModel, weaponConfig, shouldMount, isHuman)
 
     if not NetworkGetEntityIsNetworked(npc) then
         DeleteEntity(npc)
-        return nil, nil
+        return nil, nil, nil, nil
     end
 
     -- Get network ID and validate
@@ -187,7 +245,7 @@ function SpawnNPC(spawnCoords, enemyModel, weaponConfig, shouldMount, isHuman)
 
     if not netId or netId == 0 then
         DeleteEntity(npc)
-        return nil, nil
+        return nil, nil, nil, nil
     end
 
     -- Set network ID properties for proper synchronization
@@ -198,8 +256,8 @@ function SpawnNPC(spawnCoords, enemyModel, weaponConfig, shouldMount, isHuman)
     Citizen.InvokeNative(0x283978A15512B2FE, npc, true) -- _SET_RANDOM_OUTFIT_VARIATION
     SetEntityCanBeDamaged(npc, true)
     
-    -- Configure NPC
-    SetPedRelationshipGroupHash(npc, GetHashKey("Nt_Enemy"))
+    local groupHash = shouldAssignBlipGroup() and enemyGroupHash or enemyNoBlipGroupHash
+    SetPedRelationshipGroupHash(npc, groupHash)
 
     -- default humans
     if isHuman == nil then isHuman = true end
@@ -280,12 +338,12 @@ function SpawnNPC(spawnCoords, enemyModel, weaponConfig, shouldMount, isHuman)
         SetPedCombatAttributes(npc, 114, true) -- can execute target
 
         SetPedCombatRange(npc, 2) -- Attack Range
-        Citizen.InvokeNative(0x05CE6AF4DF071D23, npc, 2) -- ladder speed modifier, seems to fix melee speed issue.
+        --Citizen.InvokeNative(0x05CE6AF4DF071D23, npc, 2) -- ladder speed modifier, seems to fix melee speed issue.
         Citizen.InvokeNative(0xD77AE48611B7B10A, npc, Config.DamageModifier) -- SetPedDamageModifier
     end
 
-    -- Return both the entity and its network ID
-    return npc, netId
+    -- Return the NPC entity, network ID, and horse (if pre-mounted)
+    return npc, netId, horse, horseNetId
 end
 
 -- ============================================
@@ -311,29 +369,39 @@ function SpawnNPCGroup(spawnPosition, count, region, shouldMount)
         local enemyModel = region.EnemyTypes[math.random(1, #region.EnemyTypes)]
         
         -- Spawn the NPC
-        local npc, netId = SpawnNPC(groupSpawnPos, enemyModel, region.Weapons, shouldMount)
+        local npc, netId, horse, horseNetId = SpawnNPC(groupSpawnPos, enemyModel, region.Weapons, shouldMount)
         
         if npc and netId then
-            table.insert(npcs, npc)
+            table.insert(npcs, netId)
             table.insert(netIds, netId)
             
             -- If this NPC should be mounted, spawn a horse for it
-            if shouldMount then
-                local horse = SpawnHorseForNPC(npc, groupSpawnPos)
+            if shouldMount and not horse then
+                local spawnedHorse = SpawnHorseForNPC(npc, groupSpawnPos)
                 
                 -- If horse spawned successfully, store it
-                if horse and DoesEntityExist(horse) then
+                if spawnedHorse and DoesEntityExist(spawnedHorse) then
                     -- Initialize horses table if needed
                     if not ActiveAmbush.horses then
                         ActiveAmbush.horses = {}
                     end
                     
                     -- Store the horse
-                    table.insert(ActiveAmbush.horses, horse)
+                    local spawnedHorseNetId = NetworkGetNetworkIdFromEntity(spawnedHorse)
+                    if spawnedHorseNetId and spawnedHorseNetId ~= 0 then
+                        table.insert(ActiveAmbush.horses, spawnedHorseNetId)
+                    end
                     
                     -- Set the horse as mission entity
-                    SetEntityAsMissionEntity(horse, true, true)
+                    SetEntityAsMissionEntity(spawnedHorse, true, true)
                 end
+            elseif horse and DoesEntityExist(horse) then
+                -- Horse already spawned (pre-mounted), store it
+                if not ActiveAmbush.horses then
+                    ActiveAmbush.horses = {}
+                end
+                table.insert(ActiveAmbush.horses, horseNetId or NetworkGetNetworkIdFromEntity(horse))
+                SetEntityAsMissionEntity(horse, true, true)
             end
         end
     end
@@ -419,7 +487,8 @@ function SpawnAmbush(region, playerCoords)
         Longarms = settings.Longarms,
         LongarmsChance = settings.LongarmsChance or 50,
     }
-    local plan = { peds = 0, animalsAlongside = 0, animalsStandalone = 0, horse = settings.Horse == true, weapons = weaponConfig }
+    local horseEnabled = settings.Horse ~= false
+    local plan = { peds = 0, animalsAlongside = 0, animalsStandalone = 0, horse = horseEnabled, weapons = weaponConfig }
     local ds = settings.DogSpawnChance
 
     local hasPeds = selected.Peds and #selected.Peds > 0
@@ -468,12 +537,52 @@ function SpawnAmbush(region, playerCoords)
 
     AmbushActors = {} -- unified cache per npcAI plan
 
-    local networkIds = {}
-
     -- Spawn locations
+    local roadConfig = Config and Config.RoadSpawn or {}
+    local mountedMapDistance = tonumber(roadConfig.MountedMapDistance) or 300
+    local minimumSpawnDistance = mountedMapDistance * 0.5
+    local roadSpawnPoint = GetRoadAmbushSpawnPoint(playerCoords, playerHeading, plan.horse)
+    local spawnCenterCoords = nil
+    local spawnCenterHeading = playerHeading
+
+    local function distanceFromPlayer(coords)
+        local dx = coords.x - playerCoords.x
+        local dy = coords.y - playerCoords.y
+        return math.sqrt((dx * dx) + (dy * dy))
+    end
+
+    if roadSpawnPoint and roadSpawnPoint.coords then
+        local spawnDistance = distanceFromPlayer(roadSpawnPoint.coords)
+
+        if spawnDistance >= minimumSpawnDistance then
+            spawnCenterCoords = roadSpawnPoint.coords
+            spawnCenterHeading = roadSpawnPoint.heading or playerHeading
+        else
+            print(("[Ambush] Road spawn safety check failed: %.1fm is below the %.1fm minimum."):format(
+                spawnDistance,
+                minimumSpawnDistance
+            ))
+        end
+    else
+        print("[Ambush] Road spawn safety check failed: no road spawn point was generated.")
+    end
+
+    if not spawnCenterCoords then
+        local failSpawnPoint = GetRoadFailSpawnPoint(playerCoords, playerHeading)
+        if not failSpawnPoint or not failSpawnPoint.coords then
+            print("[Ambush] Road-fail grid could not produce a spawn point; ambush spawn cancelled.")
+            ActiveAmbush = nil
+            AmbushActors = {}
+            return
+        end
+
+        spawnCenterCoords = failSpawnPoint.coords
+        spawnCenterHeading = failSpawnPoint.heading or playerHeading
+    end
+
     local primaryGroupAngle = 90.0 + math.random(-15, 15)
-    local primaryGroupPos = GetSpawnPosition(playerCoords, playerHeading, primaryGroupAngle, Config.SpawnRightDistance)
-    local secondaryGroupPos = GetSecondGroupSpawnPosition(playerCoords, playerHeading, primaryGroupAngle)
+    local primaryGroupPos = spawnCenterCoords
+    local secondaryGroupPos = GetSecondGroupSpawnPosition(spawnCenterCoords, spawnCenterHeading, primaryGroupAngle)
 
 
     -- Helper to apply weapons to a ped using plan.weapons or region weapons
@@ -483,24 +592,36 @@ function SpawnAmbush(region, playerCoords)
         -- Reuse SpawnNPC logic already applies weapons when weaponConfig passed
     end
 
-    local function spawnOnePedAt(pos, mountFlag)
+    local function spawnOnePedAt(pos, mountFlag, preMount)
         local list = (selected.Peds and #selected.Peds > 0) and selected.Peds or {}
         if #list == 0 then return nil end
         local enemyModel = list[ math.random(1, #list) ]
-        local npc, netId = SpawnNPC(pos, enemyModel, plan.weapons, mountFlag == true)
+        local npc, netId, horse, horseNetId = SpawnNPC(pos, enemyModel, plan.weapons, mountFlag == true, true, preMount == true)
         if npc and netId then
-            table.insert(ActiveAmbush.npcs, npc)
-            table.insert(networkIds, netId)
-            local actor = { entity = npc, type = "human", mounted = mountFlag == true, mount = nil }
+            table.insert(ActiveAmbush.npcs, netId)
+            local mounted = mountFlag == true or preMount == true
+            local actor = { netId = netId, type = "human", mounted = mounted, mountNetId = nil }
             table.insert(AmbushActors, actor)
-            if mountFlag then
-                local horse = SpawnHorseForNPC(npc, pos)
-                if horse and DoesEntityExist(horse) then
-                    actor.mount = horse
+            
+            -- If mounted but not pre-mounted, spawn and mount horse now
+            if mountFlag and not preMount then
+                local spawnedHorse = SpawnHorseForNPC(npc, pos)
+                if spawnedHorse and DoesEntityExist(spawnedHorse) then
+                    local spawnedHorseNetId = NetworkGetNetworkIdFromEntity(spawnedHorse)
+                    actor.mountNetId = spawnedHorseNetId
                     ActiveAmbush.horses = ActiveAmbush.horses or {}
-                    table.insert(ActiveAmbush.horses, horse)
-                    SetEntityAsMissionEntity(horse, true, true)
+                    if spawnedHorseNetId and spawnedHorseNetId ~= 0 then
+                        table.insert(ActiveAmbush.horses, spawnedHorseNetId)
+                    end
+                    SetEntityAsMissionEntity(spawnedHorse, true, true)
                 end
+            -- If pre-mounted, the horse was already created in SpawnNPC
+            elseif preMount and horse and DoesEntityExist(horse) then
+                -- Horse already spawned and mounted in SpawnNPC, store it
+                actor.mountNetId = horseNetId or NetworkGetNetworkIdFromEntity(horse)
+                ActiveAmbush.horses = ActiveAmbush.horses or {}
+                table.insert(ActiveAmbush.horses, actor.mountNetId)
+                SetEntityAsMissionEntity(horse, true, true)
             end
         end
         return npc
@@ -509,11 +630,10 @@ function SpawnAmbush(region, playerCoords)
     local function spawnOneAnimalAt(pos)
         if not (selected.Animals and #selected.Animals > 0) then return nil end
         local model = selected.Animals[ math.random(1, #selected.Animals) ]
-        local npc, netId = SpawnNPC(pos, model, nil, false, false) -- animals: isHuman=false
+        local npc, netId, horse = SpawnNPC(pos, model, nil, false, false)
         if npc and netId then
-            table.insert(ActiveAmbush.npcs, npc)
-            table.insert(networkIds, netId)
-            table.insert(AmbushActors, { entity = npc, type = "animal", mounted = false, mount = nil })
+            table.insert(ActiveAmbush.npcs, netId)
+            table.insert(AmbushActors, { netId = netId, type = "animal", mounted = false, mountNetId = nil })
         end
         return npc
     end
@@ -531,11 +651,11 @@ function SpawnAmbush(region, playerCoords)
     end
 
     -- Helper to spawn one from mixed list
-    local function spawnOneMixedAt(pos, mountFlag)
+    local function spawnOneMixedAt(pos, mountFlag, preMount)
         if not combinedList or #combinedList == 0 then return end
         local pick = combinedList[ math.random(1, #combinedList) ]
         if pick.kind == "ped" then
-            return spawnOnePedAt(pos, mountFlag)
+            return spawnOnePedAt(pos, mountFlag, preMount)
         else
             return spawnOneAnimalAt(pos)
         end
@@ -552,13 +672,78 @@ function SpawnAmbush(region, playerCoords)
         secondaryCount = totalForSplit - primaryCount
     end
 
+    local function buildSpawnPositions(groupPosition, count)
+        local positions = {}
+
+        for i = 1, count do
+            local offset = vector3(math.random(-10, 10), math.random(-10, 10), 0)
+            positions[i] = vector3(
+                groupPosition.x + offset.x,
+                groupPosition.y + offset.y,
+                groupPosition.z
+            )
+        end
+
+        return positions
+    end
+
+    local function findUnsafeSpawnPosition(primaryPositions, secondaryPositions)
+        for _, positions in ipairs({ primaryPositions, secondaryPositions }) do
+            for _, position in ipairs(positions) do
+                local distance = distanceFromPlayer(position)
+                if distance < minimumSpawnDistance then
+                    return position, distance
+                end
+            end
+        end
+
+        return nil, nil
+    end
+
+    local primaryPositions = buildSpawnPositions(primaryGroupPos, primaryCount)
+    local secondaryPositions = buildSpawnPositions(secondaryGroupPos, secondaryCount)
+    local unsafePosition, unsafeDistance = findUnsafeSpawnPosition(primaryPositions, secondaryPositions)
+
+    if unsafePosition then
+        print(("[Ambush] Enemy spawn safety check failed: %.1fm is below the %.1fm minimum; remapping formation."):format(
+            unsafeDistance,
+            minimumSpawnDistance
+        ))
+
+        local failSpawnPoint = GetRoadFailSpawnPoint(playerCoords, playerHeading)
+        if not failSpawnPoint or not failSpawnPoint.coords then
+            print("[Ambush] Road-fail grid could not remap the unsafe formation; ambush spawn cancelled.")
+            ActiveAmbush = nil
+            AmbushActors = {}
+            return
+        end
+
+        spawnCenterCoords = failSpawnPoint.coords
+        spawnCenterHeading = failSpawnPoint.heading or playerHeading
+        primaryGroupPos = spawnCenterCoords
+        secondaryGroupPos = GetSecondGroupSpawnPosition(spawnCenterCoords, spawnCenterHeading, primaryGroupAngle)
+        primaryPositions = buildSpawnPositions(primaryGroupPos, primaryCount)
+        secondaryPositions = buildSpawnPositions(secondaryGroupPos, secondaryCount)
+
+        unsafePosition, unsafeDistance = findUnsafeSpawnPosition(primaryPositions, secondaryPositions)
+        if unsafePosition then
+            print(("[Ambush] Remapped enemy coordinate is still unsafe at %.1fm; ambush spawn cancelled."):format(
+                unsafeDistance
+            ))
+            ActiveAmbush = nil
+            AmbushActors = {}
+            return
+        end
+    end
+
     for i = 1, primaryCount do
-        local offset = vector3(math.random(-10,10), math.random(-10,10), 0)
-        local pos = vector3(primaryGroupPos.x + offset.x, primaryGroupPos.y + offset.y, primaryGroupPos.z)
+        local pos = primaryPositions[i]
+        local preMount = math.random(1, 100) <= Config.PreMountedPercentage
+        
         if mixedNoDogs then
-            spawnOneMixedAt(pos, plan.horse)
+            spawnOneMixedAt(pos, plan.horse, plan.horse and preMount)
         elseif plan.peds > 0 then
-            local ped = spawnOnePedAt(pos, plan.horse)
+            local ped = spawnOnePedAt(pos, plan.horse, plan.horse and preMount)
             if ped and type(ds) == "number" and hasAnimals then
                 if math.random(1,100) <= ds then
                     spawnOneAnimalAt(pos)
@@ -570,12 +755,13 @@ function SpawnAmbush(region, playerCoords)
     end
 
     for i = 1, secondaryCount do
-        local offset = vector3(math.random(-10,10), math.random(-10,10), 0)
-        local pos = vector3(secondaryGroupPos.x + offset.x, secondaryGroupPos.y + offset.y, secondaryGroupPos.z)
+        local pos = secondaryPositions[i]
+        local preMount = math.random(1, 100) <= Config.PreMountedPercentage
+        
         if mixedNoDogs then
-            spawnOneMixedAt(pos, plan.horse)
+            spawnOneMixedAt(pos, plan.horse, plan.horse and preMount)
         elseif plan.peds > 0 then
-            local ped = spawnOnePedAt(pos, plan.horse)
+            local ped = spawnOnePedAt(pos, plan.horse, plan.horse and preMount)
             if ped and type(ds) == "number" and hasAnimals then
                 if math.random(1,100) <= ds then
                     spawnOneAnimalAt(pos)
@@ -594,17 +780,7 @@ function SpawnAmbush(region, playerCoords)
     -- Register ambush with server for tracking
     TriggerServerEvent('ambush:server:registerAmbush', ambushId)
 
-    -- 1) Host caches ped network IDs on the server and initializes host ped blips
-    if #networkIds > 0 then
-        -- Cache on server so participants can fetch
-        TriggerServerEvent('ambush:server:cacheNetworkIds', networkIds)
-        -- Create host ped blips if enabled
-        if Config.EnableBlips and (BlipOverrides.PedBlip ~= false) then
-            InitializeBlipsAsHost(networkIds)
-        end
-    end
-
-    -- 2) Host creates and shares area blip (coords cached on server inside InitializeAreaBlipAsHost)
+    -- 1) Host creates and shares area blip (coords cached on server inside InitializeAreaBlipAsHost)
     if Config.EnableBlips and Config.AreaBlip.Enabled then
         InitializeAreaBlipAsHost(playerCoords)
     end
@@ -634,7 +810,6 @@ function SpawnAmbush(region, playerCoords)
     end
 
     StartAmbushMonitoring()
-    StartCooldown(GetTotalCooldown())
+    StartCooldown(Config.BaseCooldown)
 
-    return networkIds
 end

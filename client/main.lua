@@ -27,6 +27,7 @@ BlipOverrides = {
 -- Global ambush roll value (set at start of each ambush check)
 AmbushRoll = 0
 
+
 -- ============================================
 -- HELPER FUNCTIONS
 -- ============================================
@@ -37,18 +38,183 @@ function IsNightTime()
     return hour >= 20 or hour < 6 -- Night time is between 8 PM and 6 AM
 end
 
--- Get total ambush chance (base + additional + night bonus if applicable)
+local function GetRSGCore()
+    if rawget(_G, 'RSGCore') then
+        return RSGCore
+    end
+
+    if GetResourceState and GetResourceState('rsg-core') == 'started' then
+        return exports['rsg-core']:GetCoreObject()
+    end
+
+    return nil
+end
+
+local function GetPlayerCash()
+    local core = GetRSGCore()
+    if not core or not core.Functions or not core.Functions.GetPlayerData then
+        return 0
+    end
+
+    local playerData = core.Functions.GetPlayerData()
+    local money = playerData and playerData.money
+    if type(money) ~= "table" then
+        return 0
+    end
+
+    return tonumber(money.cash) or 0
+end
+
+local function GetAmbushCashBonus()
+    local moneyTick = tonumber(Config.AmbushChance.MoneyTick) or 0
+    local moneyMax = tonumber(Config.AmbushChance.MoneyMax) or 0
+    local currentCash = GetPlayerCash()
+
+    if moneyTick <= 0 or currentCash <= 0 then
+        return 0
+    end
+
+    return math.min(moneyMax, math.floor(currentCash / moneyTick))
+end
+
+local function GetAmbushWagonItemBonus()
+    local itemTick = tonumber(Config.AmbushChance.ItemTick) or 0
+    local itemMax = tonumber(Config.AmbushChance.ItemMax) or 0
+
+    if itemTick <= 0 or itemMax <= 0 then
+        return 0, 0
+    end
+
+    if not Config.OtherScripts or Config.OtherScripts.wagonMaker ~= true then
+        return 0, 0
+    end
+
+    if not GetResourceState or GetResourceState('rsg-wagonmaker') ~= 'started' then
+        if Config.Debug then
+            print("[Ambush] Wagonmaker resource is not started, skipping wagon item bonus")
+        end
+        return 0, 0
+    end
+
+    if not exports['rsg-wagonmaker'] or not exports['rsg-wagonmaker'].GetMyWagon then
+        if Config.Debug then
+            print("[Ambush] GetMyWagon export unavailable, skipping wagon item bonus")
+        end
+        return 0, 0
+    end
+
+    local okWagon, wagon = pcall(function()
+        return exports['rsg-wagonmaker']:GetMyWagon()
+    end)
+
+    if not okWagon then
+        if Config.Debug then
+            print("[Ambush] GetMyWagon export failed, skipping wagon item bonus")
+        end
+        return 0, 0
+    end
+
+    if not wagon or not DoesEntityExist(wagon) then
+        if Config.Debug then
+            print("[Ambush] Player has no wagon out, skipping wagon item bonus")
+        end
+        return 0, 0
+    end
+
+    local playerCoords = GetEntityCoords(PlayerPedId())
+    local wagonCoords = GetEntityCoords(wagon)
+    local distance = #(playerCoords - wagonCoords)
+    local maxDistance = tonumber(Config.AmbushChance.WagonCheckDist) or 25.0
+
+    if Config.Debug then
+        print(string.format("[Ambush] Wagon check: distance=%.2f maxDistance=%.2f", distance, maxDistance))
+    end
+
+    if distance > maxDistance then
+        if Config.Debug then
+            print("[Ambush] Wagon is too far away, skipping wagon item bonus")
+        end
+        return 0, 0
+    end
+
+    local ok, bonusItems = pcall(function()
+        return lib.callback.await('Nt_Ambient_Ambush:server:GetWagonItemCount', false)
+    end)
+
+    if not ok then
+        if Config.Debug then
+            print("[Ambush] Wagon item count callback failed, skipping wagon item bonus")
+        end
+        return 0, 0
+    end
+
+    bonusItems = tonumber(bonusItems) or 0
+
+    if bonusItems <= 0 then
+        if Config.Debug then
+            print("[Ambush] Wagon contains no configured items")
+        end
+        return 0, 0
+    end
+
+    local wagonBonus = math.min(itemMax, math.floor(bonusItems / itemTick))
+
+    if Config.Debug then
+        print(string.format("[Ambush] Wagon item count: %d, bonus: +%d%%", bonusItems, wagonBonus))
+    end
+
+    return wagonBonus, bonusItems
+end
+
+local function IsMissionLocationReserved(playerCoords)
+    if not Config.OtherScripts or Config.OtherScripts.MissionsManager ~= true then
+        return false
+    end
+
+    if not GetResourceState or GetResourceState('Nt_Missions_Manager') ~= 'started' then
+        if Config.Debug then
+            print("[Ambush] Missions Manager is not started, skipping reserved location check")
+        end
+        return false
+    end
+
+    local ok, isReserved = pcall(function()
+        return exports['Nt_Missions_Manager']:CheckMissionLocation(playerCoords, 100)
+    end)
+
+    if not ok then
+        if Config.Debug then
+            print("[Ambush] Missions Manager location check failed, continuing ambush check")
+        end
+        return false
+    end
+
+    return isReserved == true
+end
+
+-- Get total ambush chance (base + additional + night bonus + money bonus if applicable)
 function GetTotalAmbushChance(region)
     local baseChance = Config.AmbushChance.Base
     local nightBonus = 0
+    local cashBonus = GetAmbushCashBonus()
+    local wagonBonus = 0
+    local wagonItemCount = 0
     
     -- Add night bonus if it's night time and the region has night bonus enabled
     if IsNightTime() and region and region.NightBonus then
         nightBonus = Config.AmbushChance.NightAddedChance
 
     end
-    
-    return baseChance + nightBonus + AdditionalAmbushChance
+
+    wagonBonus, wagonItemCount = GetAmbushWagonItemBonus()
+
+    local totalChance = baseChance + nightBonus + cashBonus + wagonBonus + (tonumber(AdditionalAmbushChance) or 0)
+    return totalChance, {
+        nightBonus = nightBonus,
+        cashBonus = cashBonus,
+        wagonBonus = wagonBonus,
+        wagonItemCount = wagonItemCount,
+    }
 end
 
 -- Start cooldown timer
@@ -354,54 +520,6 @@ AddEventHandler('ambush:client:setAreaBlipCoords', function(coords)
     end
 end)
 
--- Event to handle network IDs from server
-RegisterNetEvent('ambush:client:addNetworkIds')
-AddEventHandler('ambush:client:addNetworkIds', function(networkIds)
-    if not Config.EnableBlips or not Config.PedBlip.Enabled then
-        return
-    end
-    
-    -- Create blips for each network ID
-    for _, netId in ipairs(networkIds) do
-        -- Get entity from network ID
-        local entity = NetworkGetEntityFromNetworkId(netId)
-        
-        if DoesEntityExist(entity) then
-            -- Create blip for entity
-            local blip = Citizen.InvokeNative(0x23F74C2FDA6E7C61, Config.PedBlip.Sprite, entity) -- BlipAddForEntity
-            
-            -- Set blip properties
-            Citizen.InvokeNative(0x662D364ABF16DE2F, blip, GetHashKey(Config.PedBlip.Color)) -- BlipAddModifier
-            Citizen.InvokeNative(0x9B6A58FDB0024F12, blip, Config.PedBlip.Scale) -- SetBlipScale
-            
-            -- Store blip in cache
-            BlipCache[netId] = {
-                blip = blip,
-                entity = entity
-            }
-            
-            if Config.Debug then
-                print("[Ambush] Created blip for network ID: " .. netId)
-            end
-        else
-            if Config.Debug then
-                print("[Ambush] Entity does not exist for network ID: " .. netId)
-            end
-        end
-    end
-end)
-
--- Event to handle participant notification from server
-RegisterNetEvent('ambush:client:notifyParticipant')
-AddEventHandler('ambush:client:notifyParticipant', function(hostServerId)
-    if Config.Debug then
-        print("[Ambush] Received participant notification from host: " .. hostServerId)
-    end
-    
-    -- Request network IDs from server
-    TriggerServerEvent('ambush:server:requestNetworkIds', hostServerId)
-end)
-
 -- Event to handle cooldown notification from server
 RegisterNetEvent('ambush:client:startCooldown')
 AddEventHandler('ambush:client:startCooldown', function()
@@ -459,8 +577,12 @@ end)
 function AreAllNPCsDead()
     if not ActiveAmbush or not ActiveAmbush.npcs then return false end
     
-    for _, npc in ipairs(ActiveAmbush.npcs) do
-        if DoesEntityExist(npc) and not IsEntityDead(npc) then
+    for _, npcNetId in ipairs(ActiveAmbush.npcs) do
+        local npc = ResolveAmbushEntity(npcNetId)
+        if npc == 0 or not DoesEntityExist(npc) then
+            return false
+        end
+        if not IsEntityDead(npc) then
             return false
         end
     end
@@ -494,7 +616,7 @@ function CheckForAmbush()
     if ActiveAmbush or PauseAmbush or Citizen.InvokeNative(0x6F972C1AB75A1ED0, source) or Citizen.InvokeNative(0x857ACB0AB4BD0D55, source) then
         return
     end
-    
+
     -- Don't check if in cooldown
     if GetGameTimer() < cooldownEndTime then
         if Config.Debug then
@@ -527,8 +649,17 @@ function CheckForAmbush()
         return
     end
 
-    -- Calculate total chance including night bonus if applicable
-    local totalChance = GetTotalAmbushChance(region)
+    -- Check if player is in reserved space.
+    local isReserved = IsMissionLocationReserved(playerCoords)
+    if isReserved then
+        if Config.Debug then
+            print("[Ambush] Player is in reserved space, skipping ambush check")
+        end
+        return
+    end
+
+    -- Calculate total chance including night, money, wagon, and external bonuses
+    local totalChance, bonusBreakdown = GetTotalAmbushChance(region)
     
     -- Random roll for this check stored globally
     AmbushRoll = math.random(100)
@@ -537,6 +668,11 @@ function CheckForAmbush()
         print("[Ambush] In region: " .. region.Name)
         if IsNightTime() and region.NightBonus then
             print("[Ambush] Night bonus active in this region")
+        end
+        print("[Ambush] Cash bonus: +" .. tostring(bonusBreakdown.cashBonus or 0) .. "%")
+        print("[Ambush] Wagon item bonus: +" .. tostring(bonusBreakdown.wagonBonus or 0) .. "% (" .. tostring(bonusBreakdown.wagonItemCount or 0) .. " matching items)")
+        if AdditionalAmbushChance > 0 then
+            print("[Ambush] Additional ambush chance: +" .. AdditionalAmbushChance .. "%")
         end
         print("[Ambush] Roll: " .. AmbushRoll .. " / " .. totalChance)
     end
@@ -553,7 +689,7 @@ function CheckForAmbush()
         SpawnAmbush(region, playerCoords)
         
         -- Start cooldown
-        StartCooldown(GetTotalCooldown())
+        StartCooldown(Config.BaseCooldown)
         
         -- Reset additional ambush chance after spawn
         -- This prevents external scripts from having to manage cleanup

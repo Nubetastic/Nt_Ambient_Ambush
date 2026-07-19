@@ -2,6 +2,20 @@
 
 Some exports will reset their values after an ambush occurs.
 It is always good to manually reset values at the end of a script mission in the event an ambush does not take place during the script mission.
+
+## addCoords (server)
+```lua
+local added = exports['Nt_Ambient_Ambush']:addCoords(coords, range)
+```
+**Parameters:**
+- `coords` (`vector3` or coordinate table): Center of the no-spawn sphere.
+- `range` (number): Positive radius of the no-spawn sphere.
+**Returns:**
+- `boolean`: `true` when the coordinates were added, otherwise `false`.
+**Use:**
+- Adds or updates an entry in `ConfigCoords.Coords` at runtime.
+- The new coordinates are synchronized to connected clients and clients that join later.
+
 ## SetAdditionalAmbushChance
 ```lua
 exports['Nt_Ambient_Ambush']:SetAdditionalAmbushChance(chance)

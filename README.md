@@ -1,7 +1,27 @@
 # Nt_Ambient_Ambush
 
 
-### No dependencies required!
+## Requirements
+
+- `ox_lib`
+- `rsg-core`
+- `rsg-inventory`
+
+## Optional integrations
+
+- [Nt_Missions_Manager](https://github.com/Nubetastic/Nt_Missions_Manager) prevents ambient ambushes from spawning in locations reserved by another mission.
+- [rsg-wagonmaker](https://github.com/Nubetastic/rsg-wagonmaker) adds configured wagon inventory items to the ambush chance calculation.
+
+Both integrations are optional. Enable or disable them in `shared/config.lua`:
+
+```lua
+Config.OtherScripts = {
+    MissionsManager = false,
+    wagonMaker = false,
+}
+```
+
+An enabled integration is also safely skipped when its resource is not started.
 
 
 ## Features:

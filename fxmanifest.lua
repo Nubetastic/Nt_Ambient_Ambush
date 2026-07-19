@@ -8,7 +8,9 @@ version '1.0.0'
 
 -- Shared configuration files
 shared_scripts {
+    '@ox_lib/init.lua',
     'shared/config.lua',
+    'shared/configItems.lua',
     'shared/configRegions.lua',
     'shared/configTowns.lua',
     'shared/configCoords.lua',
@@ -17,9 +19,12 @@ shared_scripts {
 
 -- Client-side scripts
 client_scripts {
+    'client/dynamicCoords.lua',
     'client/cleanup.lua',
+    'client/roadspawn.lua',
     'client/spawn.lua',
     'client/npcAI.lua',
+    'client/playerMonitor.lua',
     'client/main.lua',
     'client/blips.lua',
     'client/AreaBlip.lua',
@@ -29,7 +34,13 @@ client_scripts {
 
 -- Server-side scripts
 server_scripts {
+    'server/exports.lua',
     'server/main.lua',
-    'server/PedBlip.lua',
     'server/AreaBlip.lua'
+}
+
+dependencies {
+    'ox_lib',
+    'rsg-core',
+    'rsg-inventory'
 }
