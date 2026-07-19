@@ -20,8 +20,7 @@ groupOverwride = nil
 
 -- Blip override settings (nil = use config, true/false = override)
 BlipOverrides = {
-    PedBlip = nil,
-    AreaBlip = nil
+    PedBlip = nil
 }
 
 -- Global ambush roll value (set at start of each ambush check)
@@ -478,18 +477,14 @@ exports('PauseAmbushChecks', function(state)
     return false
 end)
 
--- Export to allow other resources to override blip settings
-exports('SetBlipOverrides', function(pedBlip, areaBlip)
+-- Export to allow other resources to override NPC blip settings
+exports('SetBlipOverrides', function(pedBlip)
     if type(pedBlip) == "boolean" then
         BlipOverrides.PedBlip = pedBlip
     end
-    
-    if type(areaBlip) == "boolean" then
-        BlipOverrides.AreaBlip = areaBlip
-    end
-    
+
     if Config.Debug then
-        print("[Ambush] Blip overrides set - PedBlip: " .. tostring(BlipOverrides.PedBlip) .. ", AreaBlip: " .. tostring(BlipOverrides.AreaBlip))
+        print("[Ambush] NPC blip override set: " .. tostring(BlipOverrides.PedBlip))
     end
     
     return true
@@ -498,27 +493,6 @@ end)
 -- ============================================
 -- SERVER EVENTS
 -- ============================================
-
--- Event to handle area blip coordinates from server
-RegisterNetEvent('ambush:client:setAreaBlipCoords')
-AddEventHandler('ambush:client:setAreaBlipCoords', function(coords)
-    if not Config.EnableBlips or not Config.AreaBlip.Enabled then
-        return
-    end
-    
-    -- Create area blip at the specified coordinates
-    AreaBlip = Citizen.InvokeNative(0x45F13B7E0A15C880, -1282792512, coords.x, coords.y, coords.z, Config.AreaBlip.Radius)
-    
-    -- Set blip properties
-    Citizen.InvokeNative(0x9CB1A1623062F402, AreaBlip, "Ambush") -- SetBlipName
-    Citizen.InvokeNative(0x662D364ABF16DE2F, AreaBlip, GetHashKey(Config.AreaBlip.Color)) -- BlipAddModifier
-    Citizen.InvokeNative(0x9B6A58FDB0024F12, AreaBlip, Config.AreaBlip.Scale) -- SetBlipScale
-    Citizen.InvokeNative(0x45FF974EEE1C8734, AreaBlip, Config.AreaBlip.Alpha) -- SetBlipAlpha
-    
-    if Config.Debug then
-        print("[Ambush] Created area blip from server coordinates")
-    end
-end)
 
 -- Event to handle cooldown notification from server
 RegisterNetEvent('ambush:client:startCooldown')
@@ -539,18 +513,6 @@ AddEventHandler('ambush:client:startCooldown', function()
             end
             BlipCache = {}
         end
-        
-        if Config.AreaBlip.Enabled then
-            if AreaBlip and DoesBlipExist(AreaBlip) then
-                RemoveBlip(AreaBlip)
-                AreaBlip = nil
-            end
-            
-            if AreaRadiusBlip and DoesBlipExist(AreaRadiusBlip) then
-                RemoveBlip(AreaRadiusBlip)
-                AreaRadiusBlip = nil
-            end
-        end
     end
     missionCooldown = 0
     -- Start cooldown
@@ -566,7 +528,6 @@ AddEventHandler('ambush:client:ambushEnded', function()
     
     -- Cleanup blips
     CleanupNPCBlips()
-    CleanupAreaBlip()
 end)
 
 -- ============================================

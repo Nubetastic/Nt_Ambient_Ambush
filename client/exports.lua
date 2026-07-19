@@ -47,16 +47,21 @@ exports('ResetAmbushCooldown', function()
 end)
 
 -- Export: Set ambush blip visibility for next ambush
--- @param blipType - String: "Ped", "Area", or "Both" (case-insensitive)
+-- @param blipType - String: "Ped" (case-insensitive)
 -- @param state - Boolean/String: true, false, or "Reset" (case-insensitive)
 -- @return boolean - Success status
 exports('SetAmbushBlips', function(blipType, state)
     -- Validate and normalize blipType
     if type(blipType) ~= "string" then
-        print("[Ambush] ERROR: SetAmbushBlips requires blipType as string ('Ped', 'Area', or 'Both')")
+        print("[Ambush] ERROR: SetAmbushBlips requires blipType as string ('Ped')")
         return false
     end
     blipType = blipType:lower()
+
+    if blipType ~= "ped" then
+        print("[Ambush] ERROR: Invalid blipType '" .. blipType .. "'. Use 'Ped'")
+        return false
+    end
     
     -- Normalize state to lowercase if it's a string
     if type(state) == "string" then
@@ -65,17 +70,7 @@ exports('SetAmbushBlips', function(blipType, state)
     
     -- Handle reset
     if state == "reset" then
-        if blipType == "ped" then
-            BlipOverrides.PedBlip = nil
-        elseif blipType == "area" then
-            BlipOverrides.AreaBlip = nil
-        elseif blipType == "both" then
-            BlipOverrides.PedBlip = nil
-            BlipOverrides.AreaBlip = nil
-        else
-            print("[Ambush] ERROR: Invalid blipType '" .. blipType .. "'. Use 'Ped', 'Area', or 'Both'")
-            return false
-        end
+        BlipOverrides.PedBlip = nil
         
         if Config.Debug then
             print("[Ambush] Blip overrides reset for: " .. blipType)
@@ -89,18 +84,7 @@ exports('SetAmbushBlips', function(blipType, state)
         return false
     end
     
-    -- Set overrides
-    if blipType == "ped" then
-        BlipOverrides.PedBlip = state
-    elseif blipType == "area" then
-        BlipOverrides.AreaBlip = state
-    elseif blipType == "both" then
-        BlipOverrides.PedBlip = state
-        BlipOverrides.AreaBlip = state
-    else
-        print("[Ambush] ERROR: Invalid blipType '" .. blipType .. "'. Use 'Ped', 'Area', or 'Both'")
-        return false
-    end
+    BlipOverrides.PedBlip = state
     
     if Config.Debug then
         print("[Ambush] Blip override set - Type: " .. blipType .. ", State: " .. tostring(state))

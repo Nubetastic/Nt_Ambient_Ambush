@@ -8,10 +8,4 @@ AddEventHandler('ambush:client:joinAmbush', function(hostServerId, ambushId)
     end
 
     TriggerServerEvent('ambush:server:addPlayerToAmbush', hostServerId, ambushId)
-
-    if Config.AreaBlip and Config.AreaBlip.Enabled then
-        if not BlipOverrides or BlipOverrides.AreaBlip ~= false then
-            InitializeAreaBlipAsParticipant(hostServerId)
-        end
-    end
 end)

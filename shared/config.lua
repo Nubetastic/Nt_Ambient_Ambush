@@ -95,24 +95,17 @@ Config.DamageModifier = 2.0
 -- ============================================
 -- BLIP SETTINGS
 -- ============================================
+-- This script does not create or sync blips.
+-- This script assigns peds to a group, Nt_Utilies then assigns blips to the peds based on their group
+-- This is done fully client side, without client to client or server interaction.
+-- https://github.com/Nubetastic/Nt_Utilities
 
 -- Master switch to enable/disable all blips
 Config.EnableBlips = true
-
 -- Individual NPC blip settings
 Config.PedBlip = {
     Enabled = true,
     Sprite = -1350763423,
     Color = "BLIP_MODIFIER_ENEMY", -- Red color
     Scale = .75
-}
-
--- Area blip settings (shows a circle around the ambush area)
-Config.AreaBlip = {
-    Enabled = false,
-    Sprite = -1282792512, -- Circle/radius blip
-    Color = "BLIP_MODIFIER_MP_COLOR_2", -- Red color
-    Scale = 1.0,
-    Alpha = 128, -- Semi-transparent
-    Radius = 200.0 -- Match with attack distance (Config.AttackDistance)
 }

@@ -14,8 +14,6 @@ AmbushEndTime = nil
 
 -- Blip data
 BlipCache = {}
-AreaBlip = nil
-AreaRadiusBlip = nil
 
 -- Resolve a network ID to the current local entity handle.
 -- This keeps ambush cleanup/AI stable even if the entity handle changes.
@@ -86,24 +84,6 @@ function CleanupNPCBlips()
     end
     
     BlipCache = {}
-end
-
--- Remove area blip
-local function CleanupAreaBlip()
-    if not Config.EnableBlips or not Config.AreaBlip.Enabled then
-        return
-    end
-    
-    -- Use the direct RemoveBlip native for more reliable cleanup
-    if AreaBlip and DoesBlipExist(AreaBlip) then
-        RemoveBlip(AreaBlip)
-        AreaBlip = nil
-    end
-    
-    if AreaRadiusBlip and DoesBlipExist(AreaRadiusBlip) then
-        RemoveBlip(AreaRadiusBlip)
-        AreaRadiusBlip = nil
-    end
 end
 
 -- Delete all NPCs and their horses
@@ -209,12 +189,6 @@ function PerformAmbushCleanup()
         TriggerServerEvent('ambush:server:clearAmbush', ActiveAmbush.id)
     end
     
-    -- Cleanup area blip
-    CleanupAreaBlip()
-    
-    -- Notify server to clear area blip coordinates
-    TriggerServerEvent('ambush:server:clearAreaBlipCoords')
-    
     -- Delete all NPCs
     DeleteAllNPCs()
     
@@ -239,7 +213,6 @@ function PerformAmbushCleanup()
     
     -- Reset all export overrides to default values after ambush ends
     BlipOverrides.PedBlip = nil
-    BlipOverrides.AreaBlip = nil
     AdditionalPedCount = 0
     AdditionalAmbushChance = 0
     
@@ -490,9 +463,6 @@ local function MonitorAmbush()
         -- All NPCs are dead, proceed with cleanup
         ReleaseDeadNPCsAndMounts()
         
-        -- Remove area blip immediately when all NPCs die
-        CleanupAreaBlip()
-        
         -- Remove NPC blips
         CleanupNPCBlips()
         
@@ -500,7 +470,7 @@ local function MonitorAmbush()
         AmbushEndTime = GetGameTimer() + (5 * 60 * 1000)
         
         if Config.Debug then
-            print("[Cleanup] Area blip removed, 5-minute loot timer started")
+            print("[Cleanup] Ambush ended, 5-minute loot timer started")
         end
     end
     
@@ -539,23 +509,6 @@ AddEventHandler('onResourceStop', function(resourceName)
     if GetCurrentResourceName() == resourceName then
         if Config.Debug then
             print("[Cleanup] Resource stopping, performing cleanup")
-        end
-        
-        -- Force direct blip cleanup before general cleanup
-        if AreaBlip and DoesBlipExist(AreaBlip) then
-            RemoveBlip(AreaBlip)
-            AreaBlip = nil
-            if Config.Debug then
-                print("[Cleanup] Resource stop: Directly removed area blip")
-            end
-        end
-        
-        if AreaRadiusBlip and DoesBlipExist(AreaRadiusBlip) then
-            RemoveBlip(AreaRadiusBlip)
-            AreaRadiusBlip = nil
-            if Config.Debug then
-                print("[Cleanup] Resource stop: Directly removed area radius blip")
-            end
         end
         
         -- Perform general cleanup

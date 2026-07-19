@@ -4,7 +4,7 @@ rdr3_warning 'I acknowledge that this is a prerelease build of RedM, and I am aw
 
 author 'Nubetastic'
 description 'Dynamic ambient ambush system for RedM - Creates random enemy encounters outside of towns'
-version '1.0.0'
+version '1.1.0'
 
 -- Shared configuration files
 shared_scripts {
@@ -27,7 +27,6 @@ client_scripts {
     'client/playerMonitor.lua',
     'client/main.lua',
     'client/blips.lua',
-    'client/AreaBlip.lua',
     'client/exports.lua',
     'client/utilities.lua'
 }
@@ -35,8 +34,7 @@ client_scripts {
 -- Server-side scripts
 server_scripts {
     'server/exports.lua',
-    'server/main.lua',
-    'server/AreaBlip.lua'
+    'server/main.lua'
 }
 
 dependencies {

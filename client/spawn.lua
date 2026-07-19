@@ -780,12 +780,7 @@ function SpawnAmbush(region, playerCoords)
     -- Register ambush with server for tracking
     TriggerServerEvent('ambush:server:registerAmbush', ambushId)
 
-    -- 1) Host creates and shares area blip (coords cached on server inside InitializeAreaBlipAsHost)
-    if Config.EnableBlips and Config.AreaBlip.Enabled then
-        InitializeAreaBlipAsHost(playerCoords)
-    end
-
-    -- 3) Host notifies nearby participants to join this ambush (so they fetch net IDs and area coords)
+    -- Host notifies nearby participants to join this ambush.
     do
         local hostServerId = GetPlayerServerId(PlayerId())
         local participantServerIds = {}

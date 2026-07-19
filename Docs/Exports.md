@@ -71,8 +71,6 @@ exports['Nt_Ambient_Ambush']:SetAmbushBlips(blipType, state)
 **Parameters:**
 - `blipType` (string): Type of blip to control
   - "Ped": Controls enemy NPC blips
-  - "Area": Controls the area radius blip
-  - "Both": Controls both blip types
 - `state` (boolean or string): Visibility state
   - `true`: Enable blips
   - `false`: Disable blips
