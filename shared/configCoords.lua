@@ -18,5 +18,7 @@ ConfigCoords.Coords = {
     [vector3(-334.1953, -356.7481, 88.0089)] = 100, -- Station Flatneck
     [vector3(1525.2101, 439.3247, 90.6807)] = 100, -- Station Emerald
     [vector3(-5231.1787, -3471.2407, -20.5613)] = 100, -- Station Benedict Point
+    [vector3(3212.8091, -513.4684, 43.6530)] = 300, -- Siska, uses two circle do to shape.
+    [vector3(3308.4341, -663.0936, 45.5911)] = 300, -- Siska
     
 }
