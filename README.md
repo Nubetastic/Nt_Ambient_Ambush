@@ -10,14 +10,14 @@
 ## Optional integrations
 
 - [Nt_Missions_Manager](https://github.com/Nubetastic/Nt_Missions_Manager) prevents ambient ambushes from spawning in locations reserved by another mission.
-- [rsg-wagonmaker](https://github.com/Nubetastic/rsg-wagonmaker) adds configured wagon inventory items to the ambush chance calculation.
+- `Nt_Stables` adds configured active-wagon inventory items to the ambush chance calculation.
 
 Both integrations are optional. Enable or disable them in `shared/config.lua`:
 
 ```lua
 Config.OtherScripts = {
     MissionsManager = false,
-    wagonMaker = false,
+    ntStables = false,
 }
 ```
 

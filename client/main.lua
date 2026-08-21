@@ -84,31 +84,31 @@ local function GetAmbushWagonItemBonus()
         return 0, 0
     end
 
-    if not Config.OtherScripts or Config.OtherScripts.wagonMaker ~= true then
+    if not Config.OtherScripts or Config.OtherScripts.ntStables ~= true then
         return 0, 0
     end
 
-    if not GetResourceState or GetResourceState('rsg-wagonmaker') ~= 'started' then
+    if not GetResourceState or GetResourceState('Nt_Stables') ~= 'started' then
         if Config.Debug then
-            print("[Ambush] Wagonmaker resource is not started, skipping wagon item bonus")
+            print("[Ambush] Nt_Stables is not started, skipping wagon item bonus")
         end
         return 0, 0
     end
 
-    if not exports['rsg-wagonmaker'] or not exports['rsg-wagonmaker'].GetMyWagon then
+    if not exports['Nt_Stables'] or not exports['Nt_Stables'].GetPlayerWagon then
         if Config.Debug then
-            print("[Ambush] GetMyWagon export unavailable, skipping wagon item bonus")
+            print("[Ambush] GetPlayerWagon export unavailable, skipping wagon item bonus")
         end
         return 0, 0
     end
 
     local okWagon, wagon = pcall(function()
-        return exports['rsg-wagonmaker']:GetMyWagon()
+        return exports['Nt_Stables']:GetPlayerWagon()
     end)
 
     if not okWagon then
         if Config.Debug then
-            print("[Ambush] GetMyWagon export failed, skipping wagon item bonus")
+            print("[Ambush] GetPlayerWagon export failed, skipping wagon item bonus")
         end
         return 0, 0
     end
@@ -191,9 +191,10 @@ local function IsMissionLocationReserved(playerCoords)
     return isReserved == true
 end
 
--- Get total ambush chance (base + additional + night bonus + money bonus if applicable)
+-- Get total ambush chance (base + regional + additional + night + money + wagon bonuses)
 function GetTotalAmbushChance(region)
     local baseChance = Config.AmbushChance.Base
+    local regionalBonus = tonumber(region.RegionalAmbushChance) or 0
     local nightBonus = 0
     local cashBonus = GetAmbushCashBonus()
     local wagonBonus = 0
@@ -207,8 +208,9 @@ function GetTotalAmbushChance(region)
 
     wagonBonus, wagonItemCount = GetAmbushWagonItemBonus()
 
-    local totalChance = baseChance + nightBonus + cashBonus + wagonBonus + (tonumber(AdditionalAmbushChance) or 0)
+    local totalChance = baseChance + regionalBonus + nightBonus + cashBonus + wagonBonus + (tonumber(AdditionalAmbushChance) or 0)
     return totalChance, {
+        regionalBonus = regionalBonus,
         nightBonus = nightBonus,
         cashBonus = cashBonus,
         wagonBonus = wagonBonus,
@@ -627,6 +629,7 @@ function CheckForAmbush()
     
     if Config.Debug then
         print("[Ambush] In region: " .. region.Name)
+        print("[Ambush] Regional ambush chance: +" .. tostring(bonusBreakdown.regionalBonus) .. "%")
         if IsNightTime() and region.NightBonus then
             print("[Ambush] Night bonus active in this region")
         end

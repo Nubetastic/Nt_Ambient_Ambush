@@ -253,7 +253,10 @@ function SpawnNPC(spawnCoords, enemyModel, weaponConfig, shouldMount, isHuman, p
     SetEntityVisible(npc, true)
     
     -- Set ped properties
-    Citizen.InvokeNative(0x283978A15512B2FE, npc, true) -- _SET_RANDOM_OUTFIT_VARIATION
+    local outfitCount = Citizen.InvokeNative(0x10C70A515BC03707, npc) -- GET_NUM_META_PED_OUTFITS
+    if outfitCount > 0 then
+        Citizen.InvokeNative(0x77FF8D35EEC6BBC4, npc, math.random(0, outfitCount - 1), false) -- _SET_PED_OUTFIT_INDEX
+    end
     SetEntityCanBeDamaged(npc, true)
     
     local groupHash = shouldAssignBlipGroup() and enemyGroupHash or enemyNoBlipGroupHash
@@ -539,8 +542,9 @@ function SpawnAmbush(region, playerCoords)
 
     -- Spawn locations
     local roadConfig = Config and Config.RoadSpawn or {}
-    local mountedMapDistance = tonumber(roadConfig.MountedMapDistance) or 300
-    local minimumSpawnDistance = mountedMapDistance * 0.5
+    local mapDistance = plan.horse and tonumber(roadConfig.MountedMapDistance) or tonumber(roadConfig.FootMapDistance)
+    mapDistance = mapDistance or tonumber(roadConfig.MountedMapDistance) or tonumber(roadConfig.FootMapDistance) or 300
+    local minimumSpawnDistance = mapDistance * 0.5
     local roadSpawnPoint = GetRoadAmbushSpawnPoint(playerCoords, playerHeading, plan.horse)
     local spawnCenterCoords = nil
     local spawnCenterHeading = playerHeading
@@ -557,18 +561,11 @@ function SpawnAmbush(region, playerCoords)
         if spawnDistance >= minimumSpawnDistance then
             spawnCenterCoords = roadSpawnPoint.coords
             spawnCenterHeading = roadSpawnPoint.heading or playerHeading
-        else
-            print(("[Ambush] Road spawn safety check failed: %.1fm is below the %.1fm minimum."):format(
-                spawnDistance,
-                minimumSpawnDistance
-            ))
         end
-    else
-        print("[Ambush] Road spawn safety check failed: no road spawn point was generated.")
     end
 
     if not spawnCenterCoords then
-        local failSpawnPoint = GetRoadFailSpawnPoint(playerCoords, playerHeading)
+        local failSpawnPoint = GetRoadFailSpawnPoint(playerCoords, playerHeading, plan.horse)
         if not failSpawnPoint or not failSpawnPoint.coords then
             print("[Ambush] Road-fail grid could not produce a spawn point; ambush spawn cancelled.")
             ActiveAmbush = nil
@@ -710,7 +707,7 @@ function SpawnAmbush(region, playerCoords)
             minimumSpawnDistance
         ))
 
-        local failSpawnPoint = GetRoadFailSpawnPoint(playerCoords, playerHeading)
+        local failSpawnPoint = GetRoadFailSpawnPoint(playerCoords, playerHeading, plan.horse)
         if not failSpawnPoint or not failSpawnPoint.coords then
             print("[Ambush] Road-fail grid could not remap the unsafe formation; ambush spawn cancelled.")
             ActiveAmbush = nil

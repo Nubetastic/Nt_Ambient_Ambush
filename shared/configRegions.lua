@@ -25,7 +25,10 @@ ConfigRegions.Enemies = {
         "MP_G_M_M_UniCriminals_01","MP_G_M_M_UniCriminals_02","MP_G_M_M_UNICRIMINALS_03","MP_G_M_M_UNICRIMINALS_04",
         "MP_G_M_M_UNICRIMINALS_05","MP_G_M_M_UNICRIMINALS_06","MP_G_M_M_UNICRIMINALS_07","MP_G_M_M_UNICRIMINALS_08",
         "MP_G_M_M_UNICRIMINALS_09","re_laramiegangrustling_males_01"
-    }
+    },
+    ['BANDITOS'] = {
+        "g_m_m_unibanditos_01", "u_m_m_bht_banditomine", "u_m_m_bht_banditoshack", 
+    },
 }
 
 ConfigRegions.Groups = {
@@ -187,10 +190,11 @@ ConfigRegions.Regions = {
     ["CHOLLA_SPRINGS"] = {
         RegionHash = -108848014,
         ZoneTypeId = 10,
+        RegionalAmbushChance = 10, -- added to base
         Name = "Cholla Springs",
         EnemyGroups = {
             ["Group1"] =  {
-                Peds = { "g_m_m_unibanditos_01" },
+                Peds = ConfigRegions.Enemies['BANDITOS'],
                 Settings = {
                     Timofday = "Anytime",
                     Melee = "Common", MeleeChance = 100,
@@ -203,13 +207,11 @@ ConfigRegions.Regions = {
     ["GAPTOOTH_RIDGE"] = {
         RegionHash = -2066240242,
         ZoneTypeId = 10,
+        RegionalAmbushChance = 10, -- added to base
         Name = "Gaptooth Ridge",
         EnemyGroups = {
             ["Group1"] =  {
-                Peds = {
-                    "MP_G_M_M_REDBENGANG_01",
-                    "MP_G_M_M_UniAfricanAmericanGang_01"
-                },
+                Peds = ConfigRegions.Enemies['BANDITOS'],
                 Settings = {
                     Timofday = "Anytime",
                     Melee = "Common", MeleeChance = 100,
@@ -222,10 +224,11 @@ ConfigRegions.Regions = {
     ["RIO_BRAVO"] = {
         RegionHash = -2145992129,
         ZoneTypeId = 10,
+        RegionalAmbushChance = 10, -- added to base
         Name = "Rio Bravo",
         EnemyGroups = {
             ["Group1"] =  {
-                Peds = { "MP_G_M_M_OWLHOOTFAMILY_01", "MP_G_F_M_OWLHOOTFAMILY_01" },
+                Peds = ConfigRegions.Enemies['BANDITOS'],
                 Settings = {
                     Timofday = "Anytime",
                     Melee = "Common", MeleeChance = 100,

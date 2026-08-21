@@ -18,7 +18,7 @@ Config.Debug = false
 Config.OtherScripts = {
     -- Optional integrations. Set either option to false if that resource is not used.
     MissionsManager = true, -- https://github.com/Nubetastic/Nt_Missions_Manager
-    wagonMaker = true, -- https://github.com/Nubetastic/rsg-wagonmaker
+    ntStables = true,
 }
 
 -- Base chance for ambush to spawn (percentage, 0-100)
@@ -56,8 +56,7 @@ Config.SpawnNum = {
 }
 
 -- Distance from player to spawn NPCs (in meters)
-Config.MissionDespawnDistance = 800 -- Allows for a chase.
-Config.AttackDistance = 75
+Config.MissionDespawnDistance = 350 -- Allows for a chase.
 
 -- Road-based spawn mapping used to find a stable ambush point ahead of the player
 Config.RoadSpawn = {
@@ -80,7 +79,7 @@ Config.PreMountedPercentage = 100 -- 100% of NPCs spawn already on horses
 -- ============================================
 
 -- Distance at which NPCs will attack players (in meters)
-Config.AttackDistance = 400 -- Player scan distance from mission center.
+Config.AttackDistance = 350 -- Player scan distance from mission center.
 
 -- How often to update NPC targeting (in milliseconds)
 Config.TargetingUpdateInterval = 1500

@@ -88,7 +88,7 @@ end
 lib.callback.register('Nt_Ambient_Ambush:server:GetWagonItemCount', function(source)
     local src = source
 
-    if not Config.OtherScripts or Config.OtherScripts.wagonMaker ~= true then
+    if not Config.OtherScripts or Config.OtherScripts.ntStables ~= true then
         return 0
     end
 
@@ -109,68 +109,38 @@ lib.callback.register('Nt_Ambient_Ambush:server:GetWagonItemCount', function(sou
         return 0
     end
 
-    if not GetResourceState or GetResourceState('rsg-wagonmaker') ~= 'started' then
+    if not GetResourceState or GetResourceState('Nt_Stables') ~= 'started' then
         if Config.Debug then
-            print(string.format("[Ambush Server] Wagon item count request from %d failed: rsg-wagonmaker is not started", src))
+            print(string.format("[Ambush Server] Wagon item count request from %d failed: Nt_Stables is not started", src))
         end
         return 0
     end
 
-    if not exports['rsg-wagonmaker'] or not exports['rsg-wagonmaker'].GetPlayerWagons then
-        if Config.Debug then
-            print(string.format("[Ambush Server] Wagon item count request from %d failed: GetPlayerWagons export unavailable", src))
-        end
-        return 0
-    end
-
-    local okWagons, wagons = pcall(function()
-        return exports['rsg-wagonmaker']:GetPlayerWagons(src)
-    end)
-
-    if not okWagons or type(wagons) ~= "table" then
-        if Config.Debug then
-            print(string.format("[Ambush Server] Wagon item count request from %d failed: could not load player wagons", src))
-        end
-        return 0
-    end
-
-    local spawnedWagon = nil
-    for _, wagon in ipairs(wagons) do
-        if Config.Debug then
-            print(string.format(
-                "[Ambush Server] Wagon candidate for %d: id=%s spawned=%s owner=%s model=%s",
-                src,
-                tostring(wagon.id),
-                tostring(wagon.spawned),
-                tostring(wagon.citizenid),
-                tostring(wagon.model)
-            ))
-        end
-
-        if tonumber(wagon.spawned) == 1 then
-            spawnedWagon = wagon
-            break
+    local activeWagonId = tonumber(Player.PlayerData.metadata and Player.PlayerData.metadata.stable_active_wagon)
+    if not activeWagonId then
+        local activeRide = Player.PlayerData.metadata and Player.PlayerData.metadata.stable_active_ride
+        if type(activeRide) == 'table' and activeRide.type == 'wagon' then
+            activeWagonId = tonumber(activeRide.wagonId)
         end
     end
 
     if Config.Debug then
         print(string.format(
-            "[Ambush Server] Wagon item check from %d: selectedWagonId=%s playerCitizenId=%s wagonCount=%d",
+            "[Ambush Server] Wagon item check from %d: activeWagonId=%s playerCitizenId=%s",
             src,
-            tostring(spawnedWagon and spawnedWagon.id or nil),
-            tostring(Player.PlayerData.citizenid),
-            #wagons
+            tostring(activeWagonId),
+            tostring(Player.PlayerData.citizenid)
         ))
     end
 
-    if not spawnedWagon then
+    if not activeWagonId then
         if Config.Debug then
-            print(string.format("[Ambush Server] Wagon item count denied for %d: no spawned wagon found for source player", src))
+            print(string.format("[Ambush Server] Wagon item count denied for %d: no active Nt_Stables wagon found", src))
         end
         return 0
     end
 
-    local stashId = ('wagon_%s'):format(spawnedWagon.id)
+    local stashId = ('wagon_%s'):format(activeWagonId)
     local inventory, inventorySource = GetWagonInventoryItems(stashId)
     if not inventory then
         if Config.Debug then
