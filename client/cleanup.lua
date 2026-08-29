@@ -12,9 +12,6 @@ ActiveAmbush = nil
 -- Ambush end time (for 5-minute loot timer)
 AmbushEndTime = nil
 
--- Blip data
-BlipCache = {}
-
 -- Resolve a network ID to the current local entity handle.
 -- This keeps ambush cleanup/AI stable even if the entity handle changes.
 function ResolveAmbushEntity(netId, requestControl, timeoutMs)
@@ -71,21 +68,6 @@ end
 -- CLEANUP FUNCTIONS
 -- ============================================
 
--- Remove all NPC blips
-function CleanupNPCBlips()
-    if not BlipCache then
-        return
-    end
-    
-    for _, data in pairs(BlipCache) do
-        if data.blip and DoesBlipExist(data.blip) then
-            RemoveBlip(data.blip)
-        end
-    end
-    
-    BlipCache = {}
-end
-
 -- Delete all NPCs and their horses
 local function DeleteAllNPCs()
     if not ActiveAmbush then
@@ -103,6 +85,12 @@ local function DeleteAllNPCs()
     if ActiveAmbush.npcs then
         for _, npcNetId in ipairs(ActiveAmbush.npcs) do
             DeleteAmbushEntityByNetId(npcNetId, "NPC")
+        end
+    end
+
+    if ActiveAmbush.wagons then
+        for _, wagonNetId in ipairs(ActiveAmbush.wagons) do
+            DeleteAmbushEntityByNetId(wagonNetId, "wagon")
         end
     end
 
@@ -181,9 +169,6 @@ end
 function PerformAmbushCleanup()
 
     
-    -- Cleanup NPC blips
-    CleanupNPCBlips()
-    
     -- Notify server to clear the ambush from tracking
     if ActiveAmbush then
         TriggerServerEvent('ambush:server:clearAmbush', ActiveAmbush.id)
@@ -212,18 +197,11 @@ function PerformAmbushCleanup()
     AmbushEndTime = nil
     
     -- Reset all export overrides to default values after ambush ends
-    BlipOverrides.PedBlip = nil
     AdditionalPedCount = 0
     AdditionalAmbushChance = 0
     
     -- Reset group override after ambush ends
     groupOverwride = nil
-
-end
-
--- Cleanup blips only (when NPCs die but bodies remain for looting)
--- NOTE: This function is kept for compatibility but the monitoring loop now handles this directly
-function CleanupBlipsOnly()
 
 end
 
@@ -462,9 +440,6 @@ local function MonitorAmbush()
     else
         -- All NPCs are dead, proceed with cleanup
         ReleaseDeadNPCsAndMounts()
-        
-        -- Remove NPC blips
-        CleanupNPCBlips()
         
         -- Set local cleanup timer (5 minutes)
         AmbushEndTime = GetGameTimer() + (5 * 60 * 1000)

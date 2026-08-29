@@ -12,19 +12,6 @@ CreateThread(function()
     AddRelationshipGroup("Nt_Enemy_NoBlip", enemyNoBlipGroupHash)
 end)
 
-local function shouldAssignBlipGroup()
-    if not Config.EnableBlips then
-        return false
-    end
-
-    local override = BlipOverrides and BlipOverrides.PedBlip
-    if override ~= nil then
-        return override
-    end
-
-    return Config.PedBlip and Config.PedBlip.Enabled
-end
-
 -- ============================================
 -- SPAWN POSITION FUNCTIONS
 -- ============================================
@@ -164,7 +151,7 @@ function GetRandomWeapon(weaponList)
 end
 
 -- Spawn a single NPC
-function SpawnNPC(spawnCoords, enemyModel, weaponConfig, shouldMount, isHuman, preMount)
+function SpawnNPC(spawnCoords, enemyModel, weaponConfig, shouldMount, isHuman, preMount, relationshipGroup)
     -- If preMount is enabled, spawn horse first and mount NPC to it during creation
     local horse = nil
     local horseNetId = nil
@@ -259,7 +246,7 @@ function SpawnNPC(spawnCoords, enemyModel, weaponConfig, shouldMount, isHuman, p
     end
     SetEntityCanBeDamaged(npc, true)
     
-    local groupHash = shouldAssignBlipGroup() and enemyGroupHash or enemyNoBlipGroupHash
+    local groupHash = relationshipGroup == "Nt_Enemy_NoBlip" and enemyNoBlipGroupHash or enemyGroupHash
     SetPedRelationshipGroupHash(npc, groupHash)
 
     -- default humans
@@ -419,7 +406,7 @@ end
 -- Main function to spawn an ambush
 function SpawnAmbush(region, playerCoords)
     -- New group-based spawn pipeline per update plan
-    if not region then return end
+    if not region then return false end
 
     local hour = GetClockHours()
 
@@ -459,7 +446,7 @@ function SpawnAmbush(region, playerCoords)
     end
     if #valid == 0 then
         if Config.Debug then print("[Ambush] No valid EnemyGroups for time-of-day") end
-        return
+        return false
     end
     local selected = valid[ math.random(1, #valid) ]
 
@@ -496,6 +483,28 @@ function SpawnAmbush(region, playerCoords)
 
     local hasPeds = selected.Peds and #selected.Peds > 0
     local hasAnimals = selected.Animals and #selected.Animals > 0
+    local wagonChance = 0
+    local roadSideChance = 0
+
+    if hasPeds and region.EnableWagon == true then
+        wagonChance = Config.AmbushVariations.WagonChance
+    end
+    if hasPeds and region.EnableRoadSide == true then
+        roadSideChance = Config.AmbushVariations.RoadSideChance
+    end
+
+    local normalChance = 100 - wagonChance - roadSideChance
+    local methodRoll = math.random(1, 100)
+    local ambushMethod = "standard"
+    if methodRoll > normalChance and methodRoll <= normalChance + wagonChance then
+        ambushMethod = "wagon"
+    elseif methodRoll > normalChance + wagonChance then
+        ambushMethod = "roadside"
+    end
+
+    if ambushMethod ~= "standard" then
+        plan.horse = false
+    end
 
     -- Determine group composition and total count
     local mixedNoDogs = false
@@ -527,6 +536,9 @@ function SpawnAmbush(region, playerCoords)
         coords = playerCoords,
         npcs = {},
         horses = {},
+        wagons = {},
+        method = ambushMethod,
+        combatStarted = ambushMethod ~= "roadside",
         npcTargets = {},
         hostPlayer = {
             id = PlayerId(),
@@ -548,6 +560,7 @@ function SpawnAmbush(region, playerCoords)
     local roadSpawnPoint = GetRoadAmbushSpawnPoint(playerCoords, playerHeading, plan.horse)
     local spawnCenterCoords = nil
     local spawnCenterHeading = playerHeading
+    local wagonEnemyBehindCoords = nil
 
     local function distanceFromPlayer(coords)
         local dx = coords.x - playerCoords.x
@@ -561,6 +574,7 @@ function SpawnAmbush(region, playerCoords)
         if spawnDistance >= minimumSpawnDistance then
             spawnCenterCoords = roadSpawnPoint.coords
             spawnCenterHeading = roadSpawnPoint.heading or playerHeading
+            wagonEnemyBehindCoords = roadSpawnPoint.behindCoords
         end
     end
 
@@ -570,16 +584,176 @@ function SpawnAmbush(region, playerCoords)
             print("[Ambush] Road-fail grid could not produce a spawn point; ambush spawn cancelled.")
             ActiveAmbush = nil
             AmbushActors = {}
-            return
+            return false
         end
 
         spawnCenterCoords = failSpawnPoint.coords
         spawnCenterHeading = failSpawnPoint.heading or playerHeading
+        wagonEnemyBehindCoords = failSpawnPoint.behindCoords
+    end
+
+    local function getSideCoords(coords, heading, distance, side)
+        local radians = math.rad(heading)
+        local sideX = math.cos(radians) * side
+        local sideY = math.sin(radians) * side
+        local x = coords.x + (sideX * distance)
+        local y = coords.y + (sideY * distance)
+        local foundGround, groundZ = GetGroundZFor_3dCoord(x, y, coords.z + 100.0, false)
+
+        return vector3(x, y, foundGround and groundZ or coords.z)
+    end
+
+    local formationSide = math.random(0, 1) == 0 and -1 or 1
+    local wagonEnemyPosition = math.random(0, 1) == 0 and "side" or "behind"
+
+    if ambushMethod == "wagon" and wagonEnemyPosition == "behind" and not wagonEnemyBehindCoords then
+        print("[Ambush] No road node was found behind the broken wagon; ambush spawn cancelled.")
+        ActiveAmbush = nil
+        AmbushActors = {}
+        return false
+    end
+
+    if ambushMethod == "roadside" then
+        ActiveAmbush.coords = spawnCenterCoords
+    end
+
+    if ambushMethod == "wagon" then
+        local wagonModels = Config.AmbushVariations.WagonModels
+        local wagonModel = wagonModels[math.random(1, #wagonModels)]
+        local wagonHash = GetHashKey(wagonModel)
+
+        local wagonLoadTimeout = GetGameTimer() + 10000
+        RequestModel(wagonHash, false)
+        while not HasModelLoaded(wagonHash) and GetGameTimer() < wagonLoadTimeout do Wait(0) end
+
+        if not HasModelLoaded(wagonHash) then
+            print("[Ambush] Failed to load broken wagon model: " .. wagonModel)
+            ActiveAmbush = nil
+            AmbushActors = {}
+            return false
+        end
+
+        local wagon = CreateVehicle(
+            wagonHash,
+            spawnCenterCoords.x,
+            spawnCenterCoords.y,
+            spawnCenterCoords.z,
+            (spawnCenterHeading + 90.0) % 360.0,
+            false,
+            false,
+            false,
+            false
+        )
+        SetModelAsNoLongerNeeded(wagonHash)
+
+        if wagon == 0 or not DoesEntityExist(wagon) then
+            print("[Ambush] Failed to create broken wagon: " .. wagonModel)
+            ActiveAmbush = nil
+            AmbushActors = {}
+            return false
+        end
+
+        SetEntityAsMissionEntity(wagon, true, true)
+        Citizen.InvokeNative(0x7263332501E07F52, wagon, true)
+        NetworkRegisterEntityAsNetworked(wagon)
+        local wagonNetId = NetworkGetNetworkIdFromEntity(wagon)
+
+        if not wagonNetId or wagonNetId == 0 then
+            DeleteVehicle(wagon)
+            if DoesEntityExist(wagon) then DeleteEntity(wagon) end
+            ActiveAmbush = nil
+            AmbushActors = {}
+            return false
+        end
+
+        SetNetworkIdExistsOnAllMachines(wagonNetId, true)
+        table.insert(ActiveAmbush.wagons, wagonNetId)
+        ActiveAmbush.coords = spawnCenterCoords
+        Wait(300)
+        local firstWheel = math.random(0, 1)
+        local secondWheel = firstWheel + 2
+        BreakOffVehicleWheel(wagon, firstWheel, true, false, 0, false)
+        BreakOffVehicleWheel(wagon, secondWheel, true, false, 0, false)
+        local brokenWagonCoords = GetEntityCoords(wagon)
+
+        for harnessIndex = 0, 1 do
+            local draftHorse = 0
+            local horseTimeout = GetGameTimer() + 5000
+            while GetGameTimer() < horseTimeout do
+                draftHorse = Citizen.InvokeNative(0xA8BA0BAE0173457B, wagon, harnessIndex, Citizen.ResultAsInteger())
+                if draftHorse ~= 0 and DoesEntityExist(draftHorse) then break end
+                Wait(100)
+            end
+
+            if draftHorse ~= 0 and DoesEntityExist(draftHorse) then
+                Citizen.InvokeNative(0x4402960666000E62, wagon, harnessIndex)
+                SetEntityAsMissionEntity(draftHorse, true, true)
+                DeletePed(draftHorse)
+                if DoesEntityExist(draftHorse) then DeleteEntity(draftHorse) end
+            end
+        end
+
+        local wagonMonitorEnd = GetGameTimer() + 2000
+        while DoesEntityExist(wagon) and GetGameTimer() < wagonMonitorEnd do
+            local currentWagonCoords = GetEntityCoords(wagon)
+            local moveX = currentWagonCoords.x - brokenWagonCoords.x
+            local moveY = currentWagonCoords.y - brokenWagonCoords.y
+            if math.sqrt((moveX * moveX) + (moveY * moveY)) > 0.1 then
+                FreezeEntityPosition(wagon, true)
+                break
+            end
+            Wait(100)
+        end
+
+        local triggered = false
+        while ActiveAmbush and ActiveAmbush.id == ambushId and not triggered do
+            local playerInMissionArea = false
+
+            for _, playerId in ipairs(GetActivePlayers()) do
+                local targetPed = GetPlayerPed(playerId)
+                if DoesEntityExist(targetPed) and not IsEntityDead(targetPed) then
+                    local distance = #(GetEntityCoords(targetPed) - spawnCenterCoords)
+                    if distance <= Config.MissionDespawnDistance then
+                        playerInMissionArea = true
+                    end
+                    if distance <= Config.AmbushVariations.WagonApproachDistance then
+                        FreezeEntityPosition(wagon, false)
+                        triggered = true
+                        break
+                    end
+                end
+            end
+
+            if not triggered and not playerInMissionArea then
+                if Config.Debug then
+                    print("[Ambush] Broken wagon encounter failed before the attack was triggered")
+                end
+                PerformAmbushCleanup()
+                AmbushActors = {}
+                return false
+            end
+
+            if not triggered then Wait(500) end
+        end
+
+        if not ActiveAmbush or ActiveAmbush.id ~= ambushId then return false end
     end
 
     local primaryGroupAngle = 90.0 + math.random(-15, 15)
     local primaryGroupPos = spawnCenterCoords
     local secondaryGroupPos = GetSecondGroupSpawnPosition(spawnCenterCoords, spawnCenterHeading, primaryGroupAngle)
+
+    if ambushMethod == "wagon" then
+        if wagonEnemyPosition == "side" then
+            primaryGroupPos = getSideCoords(spawnCenterCoords, spawnCenterHeading, Config.AmbushVariations.WagonEnemySideDistance, formationSide)
+        else
+            primaryGroupPos = wagonEnemyBehindCoords
+        end
+        secondaryGroupPos = primaryGroupPos
+    elseif ambushMethod == "roadside" then
+        primaryGroupPos = getSideCoords(spawnCenterCoords, spawnCenterHeading, Config.AmbushVariations.RoadSideDistance, formationSide)
+        secondaryGroupPos = primaryGroupPos
+    end
 
 
     -- Helper to apply weapons to a ped using plan.weapons or region weapons
@@ -593,12 +767,17 @@ function SpawnAmbush(region, playerCoords)
         local list = (selected.Peds and #selected.Peds > 0) and selected.Peds or {}
         if #list == 0 then return nil end
         local enemyModel = list[ math.random(1, #list) ]
-        local npc, netId, horse, horseNetId = SpawnNPC(pos, enemyModel, plan.weapons, mountFlag == true, true, preMount == true)
+        local relationshipGroup = ambushMethod == "roadside" and "Nt_Enemy_NoBlip" or "Nt_Enemy"
+        local npc, netId, horse, horseNetId = SpawnNPC(pos, enemyModel, plan.weapons, mountFlag == true, true, preMount == true, relationshipGroup)
         if npc and netId then
             table.insert(ActiveAmbush.npcs, netId)
             local mounted = mountFlag == true or preMount == true
             local actor = { netId = netId, type = "human", mounted = mounted, mountNetId = nil }
             table.insert(AmbushActors, actor)
+
+            if ambushMethod == "roadside" then
+                TaskStandStill(npc, -1)
+            end
             
             -- If mounted but not pre-mounted, spawn and mount horse now
             if mountFlag and not preMount then
@@ -627,10 +806,14 @@ function SpawnAmbush(region, playerCoords)
     local function spawnOneAnimalAt(pos)
         if not (selected.Animals and #selected.Animals > 0) then return nil end
         local model = selected.Animals[ math.random(1, #selected.Animals) ]
-        local npc, netId, horse = SpawnNPC(pos, model, nil, false, false)
+        local relationshipGroup = ambushMethod == "roadside" and "Nt_Enemy_NoBlip" or "Nt_Enemy"
+        local npc, netId, horse = SpawnNPC(pos, model, nil, false, false, nil, relationshipGroup)
         if npc and netId then
             table.insert(ActiveAmbush.npcs, netId)
             table.insert(AmbushActors, { netId = netId, type = "animal", mounted = false, mountNetId = nil })
+            if ambushMethod == "roadside" then
+                TaskStandStill(npc, -1)
+            end
         end
         return npc
     end
@@ -673,7 +856,23 @@ function SpawnAmbush(region, playerCoords)
         local positions = {}
 
         for i = 1, count do
-            local offset = vector3(math.random(-10, 10), math.random(-10, 10), 0)
+            local offset
+            if ambushMethod == "roadside" or (ambushMethod == "wagon" and wagonEnemyPosition == "behind") then
+                local radians = math.rad(spawnCenterHeading)
+                local roadX = -math.sin(radians)
+                local roadY = math.cos(radians)
+                local sideX = math.cos(radians)
+                local sideY = math.sin(radians)
+                local alongRoad = ambushMethod == "roadside" and math.random(-10, 10) or 0
+                local sideSpread = math.random(-2, 2)
+                offset = vector3(
+                    (roadX * alongRoad) + (sideX * sideSpread),
+                    (roadY * alongRoad) + (sideY * sideSpread),
+                    0
+                )
+            else
+                offset = vector3(math.random(-10, 10), math.random(-10, 10), 0)
+            end
             positions[i] = vector3(
                 groupPosition.x + offset.x,
                 groupPosition.y + offset.y,
@@ -699,7 +898,10 @@ function SpawnAmbush(region, playerCoords)
 
     local primaryPositions = buildSpawnPositions(primaryGroupPos, primaryCount)
     local secondaryPositions = buildSpawnPositions(secondaryGroupPos, secondaryCount)
-    local unsafePosition, unsafeDistance = findUnsafeSpawnPosition(primaryPositions, secondaryPositions)
+    local unsafePosition, unsafeDistance
+    if ambushMethod ~= "wagon" then
+        unsafePosition, unsafeDistance = findUnsafeSpawnPosition(primaryPositions, secondaryPositions)
+    end
 
     if unsafePosition then
         print(("[Ambush] Enemy spawn safety check failed: %.1fm is below the %.1fm minimum; remapping formation."):format(
@@ -712,13 +914,25 @@ function SpawnAmbush(region, playerCoords)
             print("[Ambush] Road-fail grid could not remap the unsafe formation; ambush spawn cancelled.")
             ActiveAmbush = nil
             AmbushActors = {}
-            return
+            return false
         end
 
         spawnCenterCoords = failSpawnPoint.coords
         spawnCenterHeading = failSpawnPoint.heading or playerHeading
-        primaryGroupPos = spawnCenterCoords
-        secondaryGroupPos = GetSecondGroupSpawnPosition(spawnCenterCoords, spawnCenterHeading, primaryGroupAngle)
+        if ambushMethod == "wagon" then
+            if wagonEnemyPosition == "side" then
+                primaryGroupPos = getSideCoords(spawnCenterCoords, spawnCenterHeading, Config.AmbushVariations.WagonEnemySideDistance, formationSide)
+            else
+                primaryGroupPos = failSpawnPoint.behindCoords
+            end
+            secondaryGroupPos = primaryGroupPos
+        elseif ambushMethod == "roadside" then
+            primaryGroupPos = getSideCoords(spawnCenterCoords, spawnCenterHeading, Config.AmbushVariations.RoadSideDistance, formationSide)
+            secondaryGroupPos = primaryGroupPos
+        else
+            primaryGroupPos = spawnCenterCoords
+            secondaryGroupPos = GetSecondGroupSpawnPosition(spawnCenterCoords, spawnCenterHeading, primaryGroupAngle)
+        end
         primaryPositions = buildSpawnPositions(primaryGroupPos, primaryCount)
         secondaryPositions = buildSpawnPositions(secondaryGroupPos, secondaryCount)
 
@@ -729,7 +943,7 @@ function SpawnAmbush(region, playerCoords)
             ))
             ActiveAmbush = nil
             AmbushActors = {}
-            return
+            return false
         end
     end
 
@@ -769,7 +983,11 @@ function SpawnAmbush(region, playerCoords)
         end
     end
 
-    -- Blips and finalize
+    if ambushMethod == "wagon" then
+        AssignTargetsToNPCs()
+    end
+
+    -- Finalize the ambush.
     if Config.Debug then
         print(string.format("[Ambush] Spawned %d entities (%d peds baseline)", #ActiveAmbush.npcs, plan.peds))
     end
@@ -796,12 +1014,12 @@ function SpawnAmbush(region, playerCoords)
                 table.insert(participantServerIds, sid)
             end
         end
+        ActiveAmbush.participantServerIds = participantServerIds
         if #participantServerIds > 0 then
             TriggerServerEvent('ambush:server:notifyParticipantsCooldown', participantServerIds)
         end
     end
 
     StartAmbushMonitoring()
-    StartCooldown(Config.BaseCooldown)
-
+    return true
 end

@@ -9,7 +9,7 @@ Config = {}
 -- ============================================
 
 -- Enable debug messages in console
-Config.Debug = false
+Config.Debug = true
 
 -- ============================================
 -- AMBUSH SPAWN SETTINGS
@@ -40,10 +40,11 @@ Config.PlayerPenalties = {
 Config.Buckets = {0, 100} -- Ambushes can only happen if client is in this bucket range.
 
 -- How often to check for ambush spawns (in seconds)
-Config.CheckInterval = 5 * 60  -- Every 5 minutes
+Config.CheckInterval = 5 --* 60  -- Every 5 minutes
 
 -- Base cooldown after an ambush spawns (in minutes)
 Config.BaseCooldown = 60
+Config.FailCooldown = 5
 
 -- Number of NPCs to spawn per ambush
 -- BaseMin/Max: Base number of NPCs for the host player
@@ -62,11 +63,28 @@ Config.MissionDespawnDistance = 350 -- Allows for a chase.
 Config.RoadSpawn = {
     MountedMapDistance = 300, -- spawn coords distance down the road
     FootMapDistance = 150, -- spawn coords distance down the road
-    RoadNodeDistance = 20, -- replaces blipDistance
+    RoadNodeDistance = 20,
     RoadFail = {
         GridSize = 5, -- 5x5 grid
         GridGap = 5, -- 5 distance between points.
     }
+}
+
+Config.AmbushVariations = {
+    WagonModels = {
+        "wagon05x",
+        "supplywagon",
+        "wagon02x",
+        "wagon03x",
+        "chuckwagon000x",
+    },
+    WagonApproachDistance = 35,
+    WagonEnemySideDistance = 30,
+    WagonEnemyBehindDistance = 10,
+    RoadSideDistance = 6,
+    RoadSideAttackDistance = 60,
+    WagonChance = 100,
+    RoadSideChance = 0,
 }
 
 -- Percentage of NPCs that spawn pre-mounted for faster engagement
@@ -90,21 +108,3 @@ Config.NPCGoToCooldown = 2000
 
 --  modifier for NPCs (1.0 = normal, 0.5 = half damage, 2.0 = double damage)
 Config.DamageModifier = 2.0
-
--- ============================================
--- BLIP SETTINGS
--- ============================================
--- This script does not create or sync blips.
--- This script assigns peds to a group, Nt_Utilies then assigns blips to the peds based on their group
--- This is done fully client side, without client to client or server interaction.
--- https://github.com/Nubetastic/Nt_Utilities
-
--- Master switch to enable/disable all blips
-Config.EnableBlips = true
--- Individual NPC blip settings
-Config.PedBlip = {
-    Enabled = true,
-    Sprite = -1350763423,
-    Color = "BLIP_MODIFIER_ENEMY", -- Red color
-    Scale = .75
-}

@@ -18,11 +18,6 @@ PauseAmbush = false
 -- Global group override for next ambush (string key into ConfigRegions.Groups)
 groupOverwride = nil
 
--- Blip override settings (nil = use config, true/false = override)
-BlipOverrides = {
-    PedBlip = nil
-}
-
 -- Global ambush roll value (set at start of each ambush check)
 AmbushRoll = 0
 
@@ -479,57 +474,25 @@ exports('PauseAmbushChecks', function(state)
     return false
 end)
 
--- Export to allow other resources to override NPC blip settings
-exports('SetBlipOverrides', function(pedBlip)
-    if type(pedBlip) == "boolean" then
-        BlipOverrides.PedBlip = pedBlip
-    end
-
-    if Config.Debug then
-        print("[Ambush] NPC blip override set: " .. tostring(BlipOverrides.PedBlip))
-    end
-    
-    return true
-end)
-
 -- ============================================
 -- SERVER EVENTS
 -- ============================================
 
+RegisterNetEvent('ambush:client:joinAmbush')
+AddEventHandler('ambush:client:joinAmbush', function(hostServerId, ambushId)
+    TriggerServerEvent('ambush:server:addPlayerToAmbush', hostServerId, ambushId)
+end)
+
 -- Event to handle cooldown notification from server
 RegisterNetEvent('ambush:client:startCooldown')
-AddEventHandler('ambush:client:startCooldown', function()
+AddEventHandler('ambush:client:startCooldown', function(minutes)
     if Config.Debug then
         print("[Ambush] Received cooldown notification from server")
     end
     
-    -- Cleanup blips when cooldown starts (ambush ended)
-    if Config.EnableBlips then
-        if Config.PedBlip.Enabled then
-            for netId, data in pairs(BlipCache) do
-                if data and data.blip then
-                    if DoesBlipExist(data.blip) then
-                        RemoveBlip(data.blip)
-                    end
-                end
-            end
-            BlipCache = {}
-        end
-    end
     missionCooldown = 0
     -- Start cooldown
-    StartCooldown(Config.BaseCooldown)
-end)
-
--- Event to handle ambush end notification from server
-RegisterNetEvent('ambush:client:ambushEnded')
-AddEventHandler('ambush:client:ambushEnded', function()
-    if Config.Debug then
-        print("[Ambush] Received ambush end notification from server")
-    end
-    
-    -- Cleanup blips
-    CleanupNPCBlips()
+    StartCooldown(minutes or Config.BaseCooldown)
 end)
 
 -- ============================================
@@ -556,11 +519,6 @@ end
 -- Despawn the current ambush (now uses centralized cleanup)
 function DespawnAmbush()
     PerformAmbushCleanup()
-end
-
--- Notify server that ambush has ended (all NPCs dead) - now uses centralized cleanup
-function NotifyAmbushEnded()
-    CleanupBlipsOnly()
 end
 
 -- ============================================
@@ -649,11 +607,8 @@ function CheckForAmbush()
             print("[Ambush] Ambush triggered!")
         end
         
-        -- Spawn the ambush
-        SpawnAmbush(region, playerCoords)
-        
-        -- Start cooldown
-        StartCooldown(Config.BaseCooldown)
+        local ambushSpawned = SpawnAmbush(region, playerCoords)
+        StartCooldown(ambushSpawned and Config.BaseCooldown or Config.FailCooldown)
         
         -- Reset additional ambush chance after spawn
         -- This prevents external scripts from having to manage cleanup

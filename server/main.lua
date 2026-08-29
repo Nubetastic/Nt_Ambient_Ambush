@@ -343,14 +343,14 @@ AddEventHandler('ambush:server:notifyParticipant', function(participantServerId,
         print(string.format("[Ambush Server] Notify participant %s to join host %s for ambush %d", participantServerId, hostServerId, ambushId))
     end
     
-    -- Tell the participant to initialize blips and pass the ambush ID
+    -- Tell the participant to join the active ambush.
     TriggerClientEvent('ambush:client:joinAmbush', participantServerId, hostServerId, ambushId)
 end)
 
 -- Notify participants to start cooldown when ambush spawns
 -- This is triggered by the host after scanning for players at spawn time
 RegisterNetEvent('ambush:server:notifyParticipantsCooldown')
-AddEventHandler('ambush:server:notifyParticipantsCooldown', function(participantServerIds)
+AddEventHandler('ambush:server:notifyParticipantsCooldown', function(participantServerIds, minutes)
     local src = source
     
     if not participantServerIds or type(participantServerIds) ~= "table" then
@@ -363,11 +363,13 @@ AddEventHandler('ambush:server:notifyParticipantsCooldown', function(participant
     if Config.Debug then
         print(string.format("[Ambush Server] Host %s will notify %d participants to start cooldown", src, #participantServerIds))
     end
+
+    local cooldownMinutes = tonumber(minutes) == Config.FailCooldown and Config.FailCooldown or nil
     
     -- Notify each participant to start cooldown
     for _, participantId in ipairs(participantServerIds) do
 
-        TriggerClientEvent('ambush:client:startCooldown', participantId)
+        TriggerClientEvent('ambush:client:startCooldown', participantId, cooldownMinutes)
     end
 end)
 

@@ -149,6 +149,7 @@ function AssignTargetToNPC(npc, targetPed)
     end
 
     if not ActiveAmbush then return false end
+    if ActiveAmbush.method == "roadside" and not ActiveAmbush.combatStarted then return false end
 
     -- Ensure caches exist
     ActiveAmbush.npcTargets = ActiveAmbush.npcTargets or {}
@@ -234,6 +235,52 @@ function AssignTargetsToNPCs()
         return
     end
 
+    if ActiveAmbush and ActiveAmbush.method == "roadside" and not ActiveAmbush.combatStarted then
+        local shouldAttack = false
+        local playerInMissionArea = false
+
+        for _, playerId in ipairs(GetActivePlayers()) do
+            local playerPed = GetPlayerPed(playerId)
+            if DoesEntityExist(playerPed) and not IsEntityDead(playerPed) then
+                local distance = #(GetEntityCoords(playerPed) - ActiveAmbush.coords)
+                if distance <= Config.MissionDespawnDistance then
+                    playerInMissionArea = true
+                end
+                if distance <= Config.AmbushVariations.RoadSideAttackDistance then
+                    shouldAttack = true
+                    break
+                end
+            end
+        end
+
+        if not shouldAttack then
+            if not playerInMissionArea then
+                local participantServerIds = ActiveAmbush.participantServerIds or {}
+                if Config.Debug then
+                    print("[Ambush] Roadside encounter failed before the attack was triggered")
+                end
+                PerformAmbushCleanup()
+                StartCooldown(Config.FailCooldown)
+                if #participantServerIds > 0 then
+                    TriggerServerEvent('ambush:server:notifyParticipantsCooldown', participantServerIds, Config.FailCooldown)
+                end
+            end
+            return
+        end
+
+        local enemyGroupHash = GetHashKey("Nt_Enemy")
+        for i = 1, #AmbushActors do
+            local actor = AmbushActors[i]
+            local entity = actor and actor.netId and ResolveAmbushEntity(actor.netId) or 0
+            if entity ~= 0 and DoesEntityExist(entity) and not IsEntityDead(entity) then
+                SetPedRelationshipGroupHash(entity, enemyGroupHash)
+                ClearPedTasks(entity)
+            end
+        end
+
+        ActiveAmbush.combatStarted = true
+    end
+
     local function acquireNearestPlayer(entity)
         local nearestPed = nil
         local nearestDist = 999999.0
@@ -278,6 +325,9 @@ end
 -- Check if an NPC is stuck or not engaging properly
 function CheckAndFixStuckNPCs()
     if not ActiveAmbush or not ActiveAmbush.npcs then
+        return
+    end
+    if ActiveAmbush.method == "roadside" and not ActiveAmbush.combatStarted then
         return
     end
     
