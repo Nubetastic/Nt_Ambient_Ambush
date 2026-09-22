@@ -9,7 +9,7 @@ Config = {}
 -- ============================================
 
 -- Enable debug messages in console
-Config.Debug = true
+Config.Debug = false
 
 -- ============================================
 -- AMBUSH SPAWN SETTINGS
